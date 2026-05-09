@@ -1,0 +1,22 @@
+﻿Source,Target,Value,Used_In_Panel_A,Used_In_Panel_B,Notes
+Meteorological Parameters,Temporal Parameters,20.62499173128083,Yes,No,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Landuse Parameters,Meteorological Parameters,12.150544834332472,Yes,No,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Meteorological Parameters,Urban Canopy Parameters,12.094073782918656,Yes,No,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Emission Source Parameters,Meteorological Parameters,8.26615929979161,Yes,No,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Landuse Parameters,Urban Canopy Parameters,7.37529017473571,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Emission Source Parameters,Landuse Parameters,5.2849547047675856,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Emission Source Parameters,Urban Canopy Parameters,4.98371521466688,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Temporal Parameters,Urban Canopy Parameters,4.482254405553249,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Landuse Parameters,Temporal Parameters,4.423733697706666,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Meteorological Parameters,Road Topology Parameters,3.4557830226296886,Yes,No,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Emission Source Parameters,Temporal Parameters,3.1349168293093044,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Landuse Parameters,Road Topology Parameters,2.261035685900424,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Road Topology Parameters,Urban Canopy Parameters,2.1297611790214432,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Meteorological Parameters,POI Parameters,1.882428352128386,Yes,No,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Emission Source Parameters,Road Topology Parameters,1.644886630190619,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Road Topology Parameters,Temporal Parameters,1.305553911759489,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Landuse Parameters,POI Parameters,0.9959577827248722,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+POI Parameters,Urban Canopy Parameters,0.9341481714509428,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+POI Parameters,Temporal Parameters,0.6792720852972707,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+Emission Source Parameters,POI Parameters,0.5798757190724046,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.
+POI Parameters,Road Topology Parameters,0.2545307566470001,Yes,Yes,Panel a uses all rows. Panel b excludes edges whose Source or Target contains Meteorological.

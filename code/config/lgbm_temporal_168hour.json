@@ -1,0 +1,117 @@
+{
+  "experiment_id": "lgbm_temporal_168hour",
+  "model_family": "LightGBM",
+  "cv_type": "temporal_5fold_by_timestamp",
+  "time_scale": "168hour",
+  "paths": {
+    "model_input_file": "data/model_inputs/modeling_dataset_168hour.parquet",
+    "feature_list_file": "data/model_feature_lists/columns_apply_168hour.xlsx",
+    "temporal_fold_file": "data/splits/temporal_5fold_window_assignment.csv",
+    "temporal_buffer_file": "data/splits/temporal_buffer_intervals.csv",
+    "output_dir": "data/model_outputs/lgbm_temporal_168hour"
+  },
+  "columns": {
+    "target_column": "NOx_168hour",
+    "station_column": "Name",
+    "timestamp_column": "Timestamp",
+    "feature_list_column": "筛选后的自变量",
+    "split_timestamp_column": "Timestamp",
+    "split_fold_column": "Temporal_Fold"
+  },
+  "temporal_cv": {
+    "n_folds": 5,
+    "validation_rule": "Temporal_Fold == current_fold",
+    "training_rule": "Temporal_Fold != current_fold",
+    "use_buffer_intervals_if_available": true,
+    "expected_gap_hours": 168,
+    "note": "If temporal_buffer_intervals.csv has zero rows, the public pipeline uses Temporal_Fold assignment directly."
+  },
+  "preprocessing": {
+    "target_outlier_method": "IQR",
+    "target_outlier_k": 5.0,
+    "drop_missing_target": true,
+    "predictor_missing_strategy": "median",
+    "scaler": "StandardScaler",
+    "scaler_fit_on_training_fold_only": true
+  },
+  "bayesian_optimization": {
+    "enabled": false,
+    "note": "Bayesian optimization is disabled by default for LightGBM in the public wrapper. The XGBoost parameter bounds should not be reused directly.",
+    "init_points": 5,
+    "n_iter": 20,
+    "cv": 3,
+    "scoring": "neg_mean_squared_error",
+    "parameter_bounds": {
+      "n_estimators": [
+        200,
+        600
+      ],
+      "max_depth": [
+        3,
+        20
+      ],
+      "learning_rate": [
+        0.01,
+        0.2
+      ],
+      "subsample": [
+        0.5,
+        1.0
+      ],
+      "colsample_bytree": [
+        0.5,
+        1.0
+      ],
+      "reg_alpha": [
+        0,
+        2
+      ],
+      "reg_lambda": [
+        0,
+        2
+      ]
+    }
+  },
+  "default_xgboost_params_when_bo_disabled": {
+    "n_estimators": 300,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.0,
+    "reg_lambda": 1.0
+  },
+  "shap": {
+    "enabled": true,
+    "compute_on": "validation_fold_only"
+  },
+  "outputs": {
+    "save_shap_values_val": true,
+    "save_val_data_for_shap": true,
+    "save_combined_compatibility_files": true,
+    "save_feature_importance": true,
+    "save_fold_metrics": true,
+    "save_summary_metrics": true,
+    "save_fold_assignment_used": true,
+    "save_run_config_used": true
+  },
+  "created_at": "2026-05-08 21:29:33",
+  "lgbm_fixed_params": {
+    "random_state": 42,
+    "n_jobs": -1,
+    "objective": "regression",
+    "verbosity": -1
+  },
+  "default_lgbm_params_when_bo_disabled": {
+    "n_estimators": 300,
+    "max_depth": -1,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.0,
+    "reg_lambda": 0.0
+  },
+  "generated_from": "code/config/xgboost_temporal_168hour.json",
+  "generated_at": "2026-05-08 23:18:42"
+}

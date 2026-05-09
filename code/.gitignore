@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# Large or restricted raw data
+data/raw/
+*.pkl
+*.joblib
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db

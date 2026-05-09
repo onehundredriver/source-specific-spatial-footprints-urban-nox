@@ -1,0 +1,20 @@
+name: nox-footprints
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - openpyxl
+  - pyarrow
+  - geopandas
+  - shap
+  - xgboost
+  - lightgbm
+  - joblib
+  - pytest
+  - pyyaml

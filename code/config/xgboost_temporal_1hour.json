@@ -1,0 +1,104 @@
+{
+  "experiment_id": "xgboost_temporal_1hour",
+  "model_family": "XGBoost",
+  "cv_type": "temporal_5fold_by_timestamp",
+  "time_scale": "1hour",
+  "paths": {
+    "model_input_file": "data/model_inputs/modeling_dataset_1hour.parquet",
+    "feature_list_file": "data/model_feature_lists/columns_apply_1hour.xlsx",
+    "temporal_fold_file": "data/splits/temporal_5fold_window_assignment.csv",
+    "temporal_buffer_file": "data/splits/temporal_buffer_intervals.csv",
+    "output_dir": "data/model_outputs/xgboost_temporal_1hour"
+  },
+  "columns": {
+    "target_column": "NOx",
+    "station_column": "Name",
+    "timestamp_column": "Timestamp",
+    "feature_list_column": "筛选后的自变量",
+    "split_timestamp_column": "Timestamp",
+    "split_fold_column": "Temporal_Fold"
+  },
+  "temporal_cv": {
+    "n_folds": 5,
+    "validation_rule": "Temporal_Fold == current_fold",
+    "training_rule": "Temporal_Fold != current_fold",
+    "use_buffer_intervals_if_available": true,
+    "expected_gap_hours": null,
+    "note": "If temporal_buffer_intervals.csv has zero rows, the public pipeline uses Temporal_Fold assignment directly."
+  },
+  "preprocessing": {
+    "target_outlier_method": "IQR",
+    "target_outlier_k": 5.0,
+    "drop_missing_target": true,
+    "predictor_missing_strategy": "median",
+    "scaler": "StandardScaler",
+    "scaler_fit_on_training_fold_only": true
+  },
+  "bayesian_optimization": {
+    "enabled": false,
+    "note": "Set to true for full reproduction. False is recommended for first pipeline testing.",
+    "init_points": 5,
+    "n_iter": 20,
+    "cv": 3,
+    "scoring": "neg_mean_squared_error",
+    "parameter_bounds": {
+      "n_estimators": [
+        200,
+        600
+      ],
+      "max_depth": [
+        3,
+        20
+      ],
+      "learning_rate": [
+        0.01,
+        0.2
+      ],
+      "subsample": [
+        0.5,
+        1.0
+      ],
+      "colsample_bytree": [
+        0.5,
+        1.0
+      ],
+      "reg_alpha": [
+        0,
+        2
+      ],
+      "reg_lambda": [
+        0,
+        2
+      ]
+    }
+  },
+  "xgboost_fixed_params": {
+    "random_state": 42,
+    "objective": "reg:squarederror",
+    "n_jobs": -1
+  },
+  "default_xgboost_params_when_bo_disabled": {
+    "n_estimators": 300,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.0,
+    "reg_lambda": 1.0
+  },
+  "shap": {
+    "enabled": true,
+    "compute_on": "validation_fold_only"
+  },
+  "outputs": {
+    "save_shap_values_val": true,
+    "save_val_data_for_shap": true,
+    "save_combined_compatibility_files": true,
+    "save_feature_importance": true,
+    "save_fold_metrics": true,
+    "save_summary_metrics": true,
+    "save_fold_assignment_used": true,
+    "save_run_config_used": true
+  },
+  "created_at": "2026-05-08 21:29:33"
+}

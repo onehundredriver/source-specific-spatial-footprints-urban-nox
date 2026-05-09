@@ -1,0 +1,15 @@
+pandas
+numpy
+scipy
+scikit-learn
+matplotlib
+openpyxl
+pyarrow
+geopandas
+shap
+xgboost
+lightgbm
+joblib
+pytest
+pyyaml
+pycirclize

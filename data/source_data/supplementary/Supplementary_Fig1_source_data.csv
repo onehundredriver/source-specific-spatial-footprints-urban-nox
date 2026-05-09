@@ -1,0 +1,47 @@
+﻿Data_Type,Panel,Panel_Label,Parameter,Value,Theta1_deg,Theta2_deg,Facecolor,Alpha,Text,X,Y,Notes
+global_parameter,,,R_MAX,5,,,,,,,,Maximum radius used for schematic sector grids.
+global_parameter,,,num_buffers,7,,,,,,,,Number of radial buffer intervals.
+color_parameter,,,COLOR_CENTER,#E63946,,,#E63946,,,,,Center upwind grid.
+color_parameter,,,COLOR_SIDE_1,#457B9D,,,#457B9D,,,,,Right crosswind grid.
+color_parameter,,,COLOR_SIDE_2,#4A4E69,,,#4A4E69,,,,,Left crosswind grid.
+color_parameter,,,COLOR_MERGED,#A8DADC,,,#A8DADC,,,,,Aggregated side grid.
+color_parameter,,,EDGE_COLOR,#1D3557,,,#1D3557,,,,,Sector boundary and arrow color.
+color_parameter,,,GRID_COLOR,#FFFFFF,,,#FFFFFF,,,,,Internal buffer line color.
+panel_title,a,a,title,Step 1: High-res 3×7 Sector-Grids,,,,,Step 1: High-res 3×7 Sector-Grids,,,Panel title.
+panel_title,b,b,title,Step 2: Crosswind Aggregation,,,,,Step 2: Crosswind Aggregation,,,Panel title.
+panel_title,c,c,title,Step 3: Dimensionality Reduced (2×7),,,,,Step 3: Dimensionality Reduced (2×7),,,Panel title.
+sector,a,a,center,,60,120,#E63946,0.8,"Center Grid
+(60° × 7)",,,Sector definition used for schematic drawing.
+sector,a,a,right,,0,60,#457B9D,0.8,"Right Grid
+(60° × 7)",,,Sector definition used for schematic drawing.
+sector,a,a,left,,120,180,#4A4E69,0.8,"Left Grid
+(60° × 7)",,,Sector definition used for schematic drawing.
+sector,b,b,center,,60,120,#E63946,0.8,"High Multicollinearity
+(VIF) Risk",,,Sector definition used for schematic drawing.
+sector,b,b,right_faded,,0,60,#457B9D,0.3,,,,Sector definition used for schematic drawing.
+sector,b,b,left_faded,,120,180,#4A4E69,0.3,,,,Sector definition used for schematic drawing.
+sector,c,c,center,,60,120,#E63946,0.8,"Center Grid
+(Advection)",,,Sector definition used for schematic drawing.
+sector,c,c,unified_side,,0,60,#A8DADC,0.8,"Unified Side Grid
+(Lateral Diffusion)",,,Sector definition used for schematic drawing.
+text_label,a,a,text_label,white,,,,,"Center Grid
+(60° × 7)",0,3.2,Panel text annotation.
+text_label,a,a,text_label,white,,,,,"Right Grid
+(60° × 7)",3.2,1.5,Panel text annotation.
+text_label,a,a,text_label,white,,,,,"Left Grid
+(60° × 7)",-3.2,1.5,Panel text annotation.
+text_label,b,b,text_label,#1D3557,,,,,"Spatial Aggregation
+Across Homogeneous Radii",0,-1.0,Panel text annotation.
+text_label,b,b,text_label,white,,,,,"High Multicollinearity
+(VIF) Risk",0,2.5,Panel text annotation.
+text_label,c,c,text_label,white,,,,,"Center Grid
+(Advection)",0,3.2,Panel text annotation.
+text_label,c,c,text_label,#1D3557,,,,,"Unified Side Grid
+(Lateral Diffusion)",3.2,1.5,Panel text annotation.
+buffer_label,a,a,buffer_distance,50m,,,,,50m,-0.7142857142857143,-0.3,Radial buffer label shown in panel a.
+buffer_label,a,a,buffer_distance,100m,,,,,100m,-1.4285714285714286,-0.3,Radial buffer label shown in panel a.
+buffer_label,a,a,buffer_distance,200m,,,,,200m,-2.142857142857143,-0.3,Radial buffer label shown in panel a.
+buffer_label,a,a,buffer_distance,500m,,,,,500m,-2.857142857142857,-0.3,Radial buffer label shown in panel a.
+buffer_label,a,a,buffer_distance,1km,,,,,1km,-3.5714285714285716,-0.3,Radial buffer label shown in panel a.
+buffer_label,a,a,buffer_distance,2km,,,,,2km,-4.285714285714286,-0.3,Radial buffer label shown in panel a.
+buffer_label,a,a,buffer_distance,3km,,,,,3km,-5.0,-0.3,Radial buffer label shown in panel a.

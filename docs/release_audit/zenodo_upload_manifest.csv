@@ -1,0 +1,5 @@
+﻿relative_path,size,suffix,zenodo_upload
+data/model_inputs/modeling_dataset_168hour.parquet,540.02 MB,.parquet,True
+data/model_inputs/modeling_dataset_1hour.parquet,254.31 MB,.parquet,True
+data/model_inputs/modeling_dataset_24hour.parquet,501.31 MB,.parquet,True
+data/model_inputs/modeling_dataset_31day.parquet,573.20 MB,.parquet,True
