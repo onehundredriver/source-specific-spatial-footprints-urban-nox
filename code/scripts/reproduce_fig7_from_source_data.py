@@ -1,21 +1,32 @@
 import os
+import re
+import warnings
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.ticker import ScalarFormatter
-from matplotlib.patheffects import withStroke
+
+warnings.filterwarnings("ignore")
 
 
 # ============================================================
-# Reproduce Fig. 7 from plot-ready public source data
+# Reproduce Fig. 7 from compact public source data
 # Input:
 #   data/source_data/main/Fig7_source_data.csv
 # Output:
 #   figures/main/Fig7_reproduced_from_source_data.png
 #   figures/main/Fig7_reproduced_from_source_data.pdf
 # ============================================================
+
+
+plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans", "Microsoft YaHei"]
+plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["text.color"] = "black"
+plt.rcParams["font.size"] = 16
+
+
+RANDOM_SEED = 42
 
 
 def find_repo_root():
@@ -44,25 +55,39 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 OUTPUT_PNG = os.path.join(OUTPUT_DIR, "Fig7_reproduced_from_source_data.png")
 OUTPUT_PDF = os.path.join(OUTPUT_DIR, "Fig7_reproduced_from_source_data.pdf")
 
-COLOR_MAP = {
-    "Ship": "#28527A",
-    "Motor Vehicle": "#E74C3C",
-    "Industrial Source": "#27AE60",
-    "Others": "#BDC3C7",
-}
 
-SOURCE_ORDER = ["Ship", "Motor Vehicle", "Industrial Source"]
-LEGEND_ORDER = ["Ship", "Motor Vehicle", "Industrial Source", "Others"]
+def adaptive_station_sorting(plot_data, alpha=0.4):
+    subplot_c_min = plot_data["Color_Value"].quantile(0.05)
+    subplot_c_max = plot_data["Color_Value"].quantile(0.95)
+    subplot_mid = (subplot_c_min + subplot_c_max) / 2.0
 
-BASELINE_R2 = 0.5875
-MAX_R = 8000
+    def calc_station_dev(group):
+        c_min = group["Color_Value"].quantile(0.05)
+        c_max = group["Color_Value"].quantile(0.95)
 
+        if c_max > c_min:
+            local_mid = (c_min + c_max) / 2.0
+            diff = group["Color_Value"] - local_mid
+        else:
+            diff = group["Color_Value"] - subplot_mid
 
-def to_numeric(df, cols):
-    for col in cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+        dev = np.where(diff < 0, abs(diff) * 0.9, abs(diff) * 1.5)
+
+        dev_min, dev_max = dev.min(), dev.max()
+        if dev_max > dev_min:
+            group["dev_norm"] = (dev - dev_min) / (dev_max - dev_min)
+        else:
+            group["dev_norm"] = 0.0
+
+        return group
+
+    plot_data = plot_data.groupby("Station", group_keys=False).apply(calc_station_dev)
+
+    rng = np.random.default_rng(RANDOM_SEED)
+    plot_data["random_noise"] = rng.uniform(0, 1, size=len(plot_data))
+    plot_data["sort_score"] = (alpha * plot_data["dev_norm"]) + ((1 - alpha) * plot_data["random_noise"])
+
+    return plot_data.sort_values(by="sort_score", ascending=True)
 
 
 def main():
@@ -72,345 +97,168 @@ def main():
     df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
 
     required_cols = [
-        "Panel",
-        "Data_Type",
-        "Source_Category",
-        "Plot_Order",
-        "Radius_m",
-        "Emission_Composition_Value",
-        "Emission_Composition_Percent",
-        "Distance_Bin_Left_m",
-        "Distance_Bin_Right_m",
-        "Distance_Bin_Center_m",
-        "Frequency",
-        "KDE_X_m",
-        "KDE_Density",
-        "Spearman_R",
-        "Mean_Spatial_Validation_R2",
-        "Baseline_R2",
-        "Peak_Radius_m",
-        "Metric_Name",
-        "Metric_Value",
+        "Base_Feature",
+        "Color_Feature",
+        "Direction",
+        "Distance_Start_m",
+        "Distance_End_m",
+        "Distance_Label",
+        "Station",
+        "X_Value",
+        "SHAP_Value",
+        "Color_Value",
+        "Color_Vmin_P5",
+        "Color_Vmax_P95",
     ]
 
     for col in required_cols:
         if col not in df.columns:
-            df[col] = np.nan
+            raise ValueError(f"Missing required column in Fig7_source_data.csv: {col}")
 
-    numeric_cols = [
-        "Plot_Order",
-        "Radius_m",
-        "Emission_Composition_Value",
-        "Emission_Composition_Percent",
-        "Distance_Bin_Left_m",
-        "Distance_Bin_Right_m",
-        "Distance_Bin_Center_m",
-        "Frequency",
-        "KDE_X_m",
-        "KDE_Density",
-        "Spearman_R",
-        "Mean_Spatial_Validation_R2",
-        "Baseline_R2",
-        "Peak_Radius_m",
-        "Metric_Value",
-    ]
+    df["Distance_Start_m"] = pd.to_numeric(df["Distance_Start_m"], errors="coerce")
+    df["Distance_End_m"] = pd.to_numeric(df["Distance_End_m"], errors="coerce")
+    df["X_Value"] = pd.to_numeric(df["X_Value"], errors="coerce")
+    df["SHAP_Value"] = pd.to_numeric(df["SHAP_Value"], errors="coerce")
+    df["Color_Value"] = pd.to_numeric(df["Color_Value"], errors="coerce")
+    df["Color_Vmin_P5"] = pd.to_numeric(df["Color_Vmin_P5"], errors="coerce")
+    df["Color_Vmax_P95"] = pd.to_numeric(df["Color_Vmax_P95"], errors="coerce")
 
-    df = to_numeric(df, numeric_cols)
+    df = df.dropna(subset=[
+        "Distance_Start_m",
+        "X_Value",
+        "SHAP_Value",
+        "Color_Value",
+    ]).copy()
 
-    plt.rcParams.update({
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Arial", "Helvetica", "Microsoft YaHei"],
-        "axes.unicode_minus": False,
-        "mathtext.default": "regular",
-        "text.color": "black",
-        "axes.labelcolor": "black",
-        "xtick.color": "black",
-        "ytick.color": "black",
-        "axes.labelweight": "bold",
-        "axes.titlesize": 22,
-        "axes.labelsize": 22,
-        "xtick.labelsize": 18,
-        "ytick.labelsize": 18,
-        "savefig.dpi": 600,
-        "axes.linewidth": 2.0,
-    })
+    base_feature = df["Base_Feature"].iloc[0]
+    color_feature = df["Color_Feature"].iloc[0]
 
-    fig = plt.figure(figsize=(26, 17))
-    gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1.3], hspace=0.25, wspace=0.45)
-
-    panel_label_kwargs = dict(fontsize=40, fontweight="bold", va="bottom", color="black")
-    x_offset_general = -0.15
-    y_offset_panel = 1.05
-
-    # ========================================================
-    # Panel a
-    # ========================================================
-    ax0 = fig.add_subplot(gs[0, 0])
-
-    pos = ax0.get_position()
-    ax0.set_position([pos.x0 - 0.03, pos.y0, pos.width * 1.0, pos.height * 1.0])
-
-    panel_a = df[
-        (df["Panel"].astype(str) == "a")
-        & (df["Data_Type"].astype(str) == "emission_composition")
-    ].copy()
-
-    panel_a = panel_a.sort_values("Plot_Order")
-
-    if panel_a.empty:
-        raise ValueError("Panel a source data are empty.")
-
-    labels = panel_a["Source_Category"].astype(str).tolist()
-    values = panel_a["Emission_Composition_Value"].values
-    colors = [COLOR_MAP.get(x, "#999999") for x in labels]
-
-    wedges, _, autotexts = ax0.pie(
-        values,
-        autopct="%1.1f%%",
-        startangle=140,
-        radius=1.25,
-        colors=colors,
-        pctdistance=0.75,
-        wedgeprops={"width": 0.50, "edgecolor": "w", "linewidth": 3}
+    unique_distances = (
+        df[["Distance_Start_m", "Distance_End_m", "Distance_Label"]]
+        .drop_duplicates()
+        .sort_values("Distance_Start_m")
+        .reset_index(drop=True)
     )
 
-    ax0.axis("off")
-    ax0.set_xticks([])
-    ax0.set_yticks([])
-    ax0.set_frame_on(False)
+    n_cols = len(unique_distances)
+    n_rows = 2
 
-    plt.setp(autotexts, size=18, weight="bold", color="white")
-    ax0.text(0, 0, "Shanghai\n$NO_x$ Sources", ha="center", va="center", fontsize=22, fontweight="bold")
-    ax0.text(-0.20, 1.05, "a", transform=ax0.transAxes, **panel_label_kwargs)
-
-    legend_elements = [
-        plt.Line2D([0], [0], color=COLOR_MAP[cat], lw=8, label=cat)
-        for cat in LEGEND_ORDER
-    ]
-
-    ax0.legend(
-        handles=legend_elements,
-        loc="center left",
-        bbox_to_anchor=(1.05, 0.5),
-        frameon=False,
-        ncol=1,
-        fontsize=18,
-        handletextpad=0.8,
-        labelspacing=1.2
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(3.5 * n_cols, 12),
+        sharey=True,
     )
 
-    # ========================================================
-    # Panel b: histogram + precomputed KDE with twin y-axis
-    # ========================================================
-    ax_hist = fig.add_subplot(gs[1, 0])
-    ax_hist2 = ax_hist.twinx()
+    fig.subplots_adjust(
+        left=0.06,
+        right=0.92,
+        wspace=0.15,
+        hspace=0.35,
+    )
 
-    hist_data = df[
-        (df["Panel"].astype(str) == "b")
-        & (df["Data_Type"].astype(str) == "distance_histogram")
-    ].copy()
+    vmin = float(df["Color_Vmin_P5"].dropna().iloc[0])
+    vmax = float(df["Color_Vmax_P95"].dropna().iloc[0])
 
-    kde_data = df[
-        (df["Panel"].astype(str) == "b")
-        & (df["Data_Type"].astype(str) == "distance_kde")
-    ].copy()
+    cmap = plt.cm.coolwarm
+    scatter = None
 
-    for source in SOURCE_ORDER:
-        subset = hist_data[hist_data["Source_Category"] == source].copy()
-        subset = subset.sort_values("Distance_Bin_Left_m")
+    for col_idx, row_dist in unique_distances.iterrows():
+        d_start = int(row_dist["Distance_Start_m"])
+        d_end = int(row_dist["Distance_End_m"])
+        label = row_dist["Distance_Label"]
 
-        if not subset.empty:
-            bin_width = subset["Distance_Bin_Right_m"] - subset["Distance_Bin_Left_m"]
+        for row_idx, direction in enumerate(["center", "side"]):
+            ax = axes[row_idx, col_idx] if n_cols > 1 else axes[row_idx]
 
-            ax_hist.bar(
-                subset["Distance_Bin_Left_m"],
-                subset["Frequency"],
-                width=bin_width,
-                align="edge",
-                color=COLOR_MAP[source],
-                alpha=0.7,
-                edgecolor="none"
+            plot_data = df[
+                (df["Distance_Start_m"] == d_start)
+                & (df["Distance_End_m"] == d_end)
+                & (df["Direction"] == direction)
+            ].copy()
+
+            if plot_data.empty:
+                ax.axis("off")
+                continue
+
+            plot_data = adaptive_station_sorting(plot_data, alpha=0.4)
+
+            scatter = ax.scatter(
+                plot_data["X_Value"],
+                plot_data["SHAP_Value"],
+                c=plot_data["Color_Value"],
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                s=15,
+                alpha=0.8,
+                edgecolors="none",
             )
 
-        kde_subset = kde_data[kde_data["Source_Category"] == source].copy()
-        kde_subset = kde_subset.dropna(subset=["KDE_X_m", "KDE_Density"]).sort_values("KDE_X_m")
-
-        if not kde_subset.empty:
-            ax_hist2.plot(
-                kde_subset["KDE_X_m"],
-                kde_subset["KDE_Density"],
-                color="white",
-                linewidth=6,
-                alpha=1.0,
-                zorder=10
-            )
-            ax_hist2.plot(
-                kde_subset["KDE_X_m"],
-                kde_subset["KDE_Density"],
-                color=COLOR_MAP[source],
-                linewidth=4,
-                alpha=1.0,
-                zorder=11
-            )
-
-    ax_hist.set_yscale("log")
-    ax_hist.set_ylim(bottom=0.5)
-
-    ax_hist.text(x_offset_general, y_offset_panel, "b", transform=ax_hist.transAxes, **panel_label_kwargs)
-    ax_hist.set_xlabel("Distance from Station (m)", fontsize=22, fontweight="bold", labelpad=10)
-    ax_hist.set_ylabel("Frequency", fontsize=22, fontweight="bold", labelpad=10)
-    ax_hist2.set_ylabel("Density", fontsize=22, fontweight="bold", labelpad=10)
-
-    ax_hist.set_xlim(0, 7000)
-    ax_hist.grid(axis="y", linestyle=":", alpha=0.6)
-
-    ax_hist.tick_params(axis="both", labelsize=18)
-    ax_hist2.tick_params(axis="y", labelsize=18)
-    ax_hist.spines["top"].set_visible(False)
-    ax_hist2.spines["top"].set_visible(False)
-
-    # ========================================================
-    # Panel c
-    # ========================================================
-    ax1 = fig.add_subplot(gs[0, 1])
-
-    panel_c = df[
-        (df["Panel"].astype(str) == "c")
-        & (df["Data_Type"].astype(str) == "spearman_curve")
-    ].copy()
-
-    for source in SOURCE_ORDER:
-        subset = panel_c[panel_c["Source_Category"] == source].copy()
-        subset = subset.dropna(subset=["Radius_m", "Spearman_R"]).sort_values("Radius_m")
-
-        if not subset.empty:
-            ax1.plot(
-                subset["Radius_m"],
-                subset["Spearman_R"],
-                color=COLOR_MAP[source],
-                lw=4,
-                alpha=0.9
-            )
-
-    ax1.text(x_offset_general, y_offset_panel, "c", transform=ax1.transAxes, **panel_label_kwargs)
-    ax1.set_ylabel("Spearman Correlation (R)", fontsize=22, fontweight="bold", labelpad=10)
-    ax1.grid(axis="y", linestyle=":", alpha=0.6)
-    ax1.spines["top"].set_visible(False)
-    ax1.spines["right"].set_visible(False)
-    ax1.tick_params(axis="both", labelsize=18)
-    plt.setp(ax1.get_xticklabels(), visible=False)
-
-    # ========================================================
-    # Panel d
-    # ========================================================
-    ax2 = fig.add_subplot(gs[1, 1], sharex=ax1)
-    text_y_height = 1.02
-    x_offset = 1.15
-
-    panel_d_curve = df[
-        (df["Panel"].astype(str) == "d")
-        & (df["Data_Type"].astype(str) == "r2_curve")
-    ].copy()
-
-    peak_summary = df[
-        (df["Panel"].astype(str) == "d")
-        & (df["Data_Type"].astype(str) == "peak_radius_summary")
-    ].copy()
-
-    all_r2_vals = []
-
-    for source in SOURCE_ORDER:
-        subset = panel_d_curve[panel_d_curve["Source_Category"] == source].copy()
-        subset = subset.dropna(subset=["Radius_m", "Mean_Spatial_Validation_R2"]).sort_values("Radius_m")
-
-        if subset.empty:
-            continue
-
-        all_r2_vals.append(subset["Mean_Spatial_Validation_R2"])
-
-        ax2.plot(
-            subset["Radius_m"],
-            subset["Mean_Spatial_Validation_R2"],
-            color=COLOR_MAP[source],
-            lw=4,
-            alpha=0.9,
-            marker="None"
-        )
-
-        peak_subset = peak_summary[peak_summary["Source_Category"] == source].copy()
-
-        if not peak_subset.empty:
-            best_r = float(peak_subset["Peak_Radius_m"].iloc[0])
-        else:
-            idx_max = subset["Mean_Spatial_Validation_R2"].idxmax()
-            best_r = float(subset.loc[idx_max, "Radius_m"])
-
-        for target_ax in [ax1, ax2]:
-            target_ax.axvline(
-                x=best_r,
-                color=COLOR_MAP[source],
+            ax.axhline(
+                0,
+                color="gray",
                 linestyle="--",
-                lw=2.5,
-                alpha=0.5
+                linewidth=1,
+                alpha=0.7,
             )
 
-        txt = ax2.text(
-            best_r * x_offset,
-            text_y_height,
-            f"{int(best_r)}m",
-            color=COLOR_MAP[source],
-            transform=ax2.get_xaxis_transform(),
+            ax.set_yscale("symlog", linthresh=3)
+
+            x_min = plot_data["X_Value"].min()
+            x_max = plot_data["X_Value"].max()
+
+            if x_max > x_min:
+                ax.set_xticks([x_min, x_min + (x_max - x_min) / 2, x_max])
+                ax.set_xticklabels(["Low", "Med", "High"])
+            else:
+                ax.set_xticks([])
+
+            if row_idx == 0:
+                ax.set_title(
+                    f"Distance: {label}",
+                    fontsize=20,
+                    fontweight="bold",
+                    pad=15,
+                )
+
+            if col_idx == n_cols // 2:
+                ax.set_xlabel(
+                    f"Base Feature: emission_density ({direction.capitalize()})",
+                    fontsize=18,
+                    fontweight="bold",
+                    labelpad=10,
+                )
+
+            if col_idx == 0:
+                ax.set_ylabel(
+                    "SHAP Value\n(Impact on NOx)",
+                    fontsize=18,
+                )
+
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+    if scatter is not None:
+        cbar_ax = fig.add_axes([0.94, 0.15, 0.01, 0.7])
+        cbar = fig.colorbar(scatter, cax=cbar_ax)
+        cbar.outline.set_visible(False)
+        cbar.set_ticks([vmin, (vmin + vmax) / 2, vmax])
+        cbar.set_ticklabels(["Low", "Med", "High"])
+        cbar.set_label(
+            f"Interacting Feature: {color_feature}",
+            fontsize=18,
             fontweight="bold",
-            ha="left",
-            va="center",
-            fontsize=18
+            rotation=270,
+            labelpad=25,
         )
-        txt.set_path_effects([withStroke(linewidth=4, foreground="white")])
+        cbar.ax.tick_params(labelsize=18)
 
-    ax2.axhline(y=BASELINE_R2, color="black", linestyle="-.", lw=2.5, alpha=0.8)
-    ax2.text(
-        MAX_R * 0.98,
-        BASELINE_R2 + 0.0005,
-        f"Baseline (Meteo-only): {BASELINE_R2:.4f}",
-        ha="right",
-        va="bottom",
-        fontsize=18,
-        color="black",
-        fontweight="bold"
-    )
-
-    if all_r2_vals:
-        all_r2_vals = pd.concat(all_r2_vals)
-        top_max = all_r2_vals.max()
-        bot_min = all_r2_vals.min()
-        plot_min = min(BASELINE_R2, bot_min) - 0.003
-        ax2.set_ylim(plot_min, top_max + 0.003)
-    else:
-        ax2.set_ylim(0.580, 0.630)
-
-    ax2.set_xscale("symlog", linthresh=1000)
-
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax2.xaxis.set_major_formatter(formatter)
-
-    ax2.set_xticks([0, 250, 500, 750, 1000, 2000, 4000, 8000])
-    ax2.set_xlim(0, MAX_R)
-
-    ax2.text(x_offset_general, y_offset_panel, "d", transform=ax2.transAxes, **panel_label_kwargs)
-    ax2.set_ylabel("5-Fold Mean Spatial Val $R^2$", fontsize=22, fontweight="bold", labelpad=10)
-    ax2.set_xlabel("Buffer Radius (m)", fontsize=22, fontweight="bold", labelpad=10)
-    ax2.grid(axis="y", linestyle=":", alpha=0.6)
-    ax2.tick_params(axis="both", labelsize=18)
-    ax2.spines["top"].set_visible(False)
-    ax2.spines["right"].set_visible(False)
-
-    plt.tight_layout()
+    plt.savefig(OUTPUT_PNG, dpi=300, bbox_inches="tight")
     plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")
-    plt.savefig(OUTPUT_PNG, dpi=600, bbox_inches="tight")
     plt.close(fig)
 
-    print("Fig. 7 reproduced from plot-ready source data.")
+    print("Fig. 7 reproduced from source data.")
     print(f"PNG: {OUTPUT_PNG}")
     print(f"PDF: {OUTPUT_PDF}")
 

@@ -1,22 +1,30 @@
 import os
 import warnings
 
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.colors import LinearSegmentedColormap
+import seaborn as sns
+from matplotlib.lines import Line2D
 
 warnings.filterwarnings("ignore")
 
 
-plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans", "Microsoft YaHei"]
-plt.rcParams["axes.unicode_minus"] = False
-plt.rcParams["text.color"] = "black"
-plt.rcParams["axes.labelcolor"] = "black"
-plt.rcParams["xtick.color"] = "black"
-plt.rcParams["ytick.color"] = "black"
+# =======================================================
+# Reproduce Supplementary Fig. 5 from source data
+# Current scope:
+#   reproduces the provided station-level slope graph panel set
+# =======================================================
+
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'Microsoft YaHei']
+plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['mathtext.default'] = 'regular'
+sns.set_theme(style="ticks", font="Arial")
+
+COLOR_GAIN = '#E64B35'
+COLOR_LOSS = '#8A9CBC'
+COLOR_BASE = '#CCCCCC'
+COLOR_MEAN = '#111111'
 
 
 def find_repo_root():
@@ -34,305 +42,16 @@ SOURCE_DATA_PATH = os.path.join(
     "Supplementary_Fig5_source_data.csv"
 )
 
-OUTPUT_DIR = os.path.join(REPO_ROOT, "figures", "supplementary")
+OUTPUT_DIR = os.path.join(
+    REPO_ROOT,
+    "figures",
+    "supplementary"
+)
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 OUTPUT_PNG = os.path.join(OUTPUT_DIR, "Supplementary_Fig5_reproduced_from_source_data.png")
 OUTPUT_PDF = os.path.join(OUTPUT_DIR, "Supplementary_Fig5_reproduced_from_source_data.pdf")
-
-
-CLUSTER_CMAP = LinearSegmentedColormap.from_list("shap", ["#1E88E5", "#FF0052"])
-
-
-def draw_shap_bar_panel(ax_main, df, source_label, panel_letter):
-    df_imp = df[
-        (df["Data_Type"] == "feature_importance")
-        & (df["Source"] == source_label)
-    ].copy()
-
-    df_points = df[
-        (df["Data_Type"] == "shap_point")
-        & (df["Source"] == source_label)
-    ].copy()
-
-    if df_imp.empty:
-        raise ValueError(f"No feature_importance rows for {source_label}")
-
-    df_imp["Feature_Rank"] = pd.to_numeric(df_imp["Feature_Rank"], errors="coerce")
-    df_imp["Mean_Abs_SHAP"] = pd.to_numeric(df_imp["Mean_Abs_SHAP"], errors="coerce")
-    df_imp["Category_Total_Importance"] = pd.to_numeric(df_imp["Category_Total_Importance"], errors="coerce")
-
-    df_imp = df_imp.sort_values("Feature_Rank").head(20)
-
-    features = df_imp["Feature"].tolist()
-    display_names = df_imp["Feature_Display"].tolist()
-    mean_imp = df_imp["Mean_Abs_SHAP"].to_numpy()
-    categories = df_imp["Feature_Category"].tolist()
-
-    cat_total = (
-        df_imp
-        .drop_duplicates(subset=["Feature_Category"])
-        .set_index("Feature_Category")["Category_Total_Importance"]
-        .to_dict()
-    )
-
-    sorted_cats = sorted(cat_total.keys(), key=lambda k: cat_total[k], reverse=True)
-
-    cmap_base = plt.cm.Blues
-    cat_colors = {
-        cat: cmap_base(0.65 - 0.4 * (i / max(1, len(sorted_cats) - 1)))
-        for i, cat in enumerate(sorted_cats)
-    }
-
-    y_positions = np.arange(len(features))[::-1]
-
-    ax_top = ax_main.twiny()
-
-    bar_colors = [cat_colors[c] for c in categories][::-1]
-    ax_top.barh(
-        y_positions,
-        mean_imp[::-1],
-        color=bar_colors,
-        alpha=0.85,
-        height=0.6,
-        zorder=0,
-    )
-
-    ax_top.set_xlabel(
-        "mean(|SHAP value|)",
-        fontsize=22,
-        fontweight="bold",
-        color="black",
-        labelpad=12,
-    )
-    ax_top.tick_params(axis="x", colors="black", labelsize=18)
-
-    if np.nanmax(mean_imp) > 0:
-        ax_top.set_xlim(0, np.nanmax(mean_imp) * 2.2)
-
-    # Scatter points
-    rng = np.random.default_rng(42)
-
-    for rank_idx, feature in enumerate(features):
-        sub = df_points[df_points["Feature"] == feature].copy()
-        if sub.empty:
-            continue
-
-        sub["SHAP_Value"] = pd.to_numeric(sub["SHAP_Value"], errors="coerce")
-        sub["Feature_Value_Normalized"] = pd.to_numeric(sub["Feature_Value_Normalized"], errors="coerce")
-
-        sub = sub.dropna(subset=["SHAP_Value", "Feature_Value_Normalized"])
-
-        y_base = len(features) - 1 - rank_idx
-        jitter = rng.normal(0, 0.08, len(sub))
-
-        ax_main.scatter(
-            sub["SHAP_Value"],
-            np.full(len(sub), y_base) + jitter,
-            c=sub["Feature_Value_Normalized"],
-            cmap=CLUSTER_CMAP,
-            vmin=0,
-            vmax=1,
-            s=10,
-            alpha=0.6,
-            linewidths=0,
-            zorder=3,
-        )
-
-    xmin, xmax = ax_main.get_xlim()
-    span = xmax - xmin if xmax > xmin else 1
-    ax_main.set_xlim(xmin - span * 0.85, xmax + span * 0.40)
-
-    new_xmin, new_xmax = ax_main.get_xlim()
-    span_new = new_xmax - new_xmin
-
-    ax_main.set_yticks(np.arange(len(features)))
-    ax_main.set_yticklabels([])
-    ax_main.tick_params(axis="y", length=0)
-
-    for i, feat_name in enumerate(display_names[::-1]):
-        ax_main.text(
-            new_xmin + span_new * 0.38,
-            i,
-            feat_name,
-            fontsize=16,
-            fontweight="bold",
-            color="black",
-            va="center",
-            ha="right",
-        )
-
-    ax_main.set_xlabel(
-        "SHAP value (Impact on model output)",
-        fontsize=22,
-        fontweight="bold",
-        color="black",
-        labelpad=12,
-    )
-
-    ax_main.tick_params(axis="x", labelsize=18, colors="black")
-
-    ax_main.set_zorder(ax_top.get_zorder() + 1)
-    ax_main.patch.set_visible(False)
-
-    ax_main.spines["top"].set_visible(False)
-    ax_main.spines["right"].set_visible(False)
-    ax_top.spines["right"].set_visible(False)
-
-    sm = plt.cm.ScalarMappable(
-        cmap=CLUSTER_CMAP,
-        norm=plt.Normalize(vmin=0, vmax=1),
-    )
-
-    cb = plt.colorbar(
-        sm,
-        ax=ax_main,
-        aspect=35,
-        pad=0.04,
-        shrink=0.8,
-        location="right",
-    )
-    cb.set_label(
-        "Feature Value",
-        size=18,
-        fontweight="bold",
-        color="black",
-        labelpad=5,
-    )
-    cb.ax.tick_params(labelsize=14, colors="black")
-    cb.set_ticks([0, 1])
-    cb.set_ticklabels(["Low", "High"])
-    cb.outline.set_visible(False)
-
-    ax_main.text(
-        -0.05,
-        1.13,
-        panel_letter,
-        transform=ax_main.transAxes,
-        fontsize=40,
-        fontweight="bold",
-        va="top",
-    )
-
-    # Donut chart
-    ax_sun = ax_main.inset_axes([0.73, 0.28, 0.25, 0.70])
-    inner_sizes = [cat_total[c] for c in sorted_cats]
-    inner_colors = [cat_colors[c] for c in sorted_cats]
-
-    wedges, texts, autotexts = ax_sun.pie(
-        inner_sizes,
-        radius=1.0,
-        colors=inner_colors,
-        wedgeprops=dict(width=0.45, edgecolor="white", linewidth=1.5),
-        autopct=lambda pct: f"{pct:.0f}%" if pct > 3 else "",
-        pctdistance=0.75,
-    )
-
-    plt.setp(autotexts, size=15, weight="bold", color="white")
-
-    ax_sun.legend(
-        wedges,
-        sorted_cats,
-        title="Feature Categories",
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.02),
-        fontsize=14,
-        title_fontsize=16,
-        frameon=False,
-    )
-
-
-def draw_rank_boxplot(ax_box, df, source_label, panel_letter):
-    df_rank = df[
-        (df["Data_Type"] == "bootstrap_rank")
-        & (df["Source"] == source_label)
-    ].copy()
-
-    if df_rank.empty:
-        raise ValueError(f"No bootstrap rank rows for {source_label}")
-
-    df_rank["Feature_Rank"] = pd.to_numeric(df_rank["Feature_Rank"], errors="coerce")
-    df_rank["Rank_Value"] = pd.to_numeric(df_rank["Rank_Value"], errors="coerce")
-
-    features = (
-        df_rank[["Feature", "Feature_Rank"]]
-        .drop_duplicates()
-        .sort_values("Feature_Rank")["Feature"]
-        .tolist()
-    )
-
-    data_list = [
-        df_rank[df_rank["Feature"] == feat]["Rank_Value"].dropna().values
-        for feat in features
-    ]
-
-    positions = np.arange(len(data_list))[::-1]
-
-    bp = ax_box.boxplot(
-        data_list,
-        positions=positions,
-        vert=False,
-        widths=0.5,
-        patch_artist=True,
-        showfliers=True,
-    )
-
-    for box in bp["boxes"]:
-        box.set_facecolor("#E0E0E0")
-        box.set_edgecolor("black")
-        box.set_linewidth(1.8)
-
-    for median in bp["medians"]:
-        median.set_color("black")
-        median.set_linewidth(2.5)
-
-    for whisker in bp["whiskers"]:
-        whisker.set_color("black")
-        whisker.set_linewidth(1.8)
-        whisker.set_linestyle("--")
-
-    for cap in bp["caps"]:
-        cap.set_color("black")
-        cap.set_linewidth(1.8)
-
-    for flier in bp["fliers"]:
-        flier.set_marker("o")
-        flier.set_markerfacecolor("none")
-        flier.set_markeredgecolor("black")
-        flier.set_markersize(5)
-
-    ax_box.set_ylim(-0.5, 19.5)
-    ax_box.set_yticks([])
-    ax_box.set_yticklabels([])
-
-    ax_box.set_xlabel(
-        "Rank (1 = Highest Importance)",
-        fontsize=22,
-        fontweight="bold",
-        labelpad=12,
-        color="black",
-    )
-    ax_box.tick_params(axis="x", labelsize=18, colors="black")
-
-    d_max = np.nanmax([np.nanmax(vals) for vals in data_list if len(vals) > 0])
-    ax_box.set_xlim(0, max(21, d_max + 1))
-    ax_box.set_xticks([1, 5, 10, 15, 20])
-
-    ax_box.grid(False)
-
-    ax_box.spines["top"].set_visible(False)
-    ax_box.spines["right"].set_visible(False)
-    ax_box.spines["left"].set_visible(False)
-
-    ax_box.text(
-        -0.05,
-        1.13,
-        panel_letter,
-        transform=ax_box.transAxes,
-        fontsize=40,
-        fontweight="bold",
-        va="top",
-    )
 
 
 def main():
@@ -341,66 +60,119 @@ def main():
 
     df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
 
-    fig = plt.figure(figsize=(24, 20))
+    df_station = df[df["Data_Type"] == "station_slope_record"].copy()
+    df_mean = df[df["Data_Type"] == "mean_trajectory"].copy()
 
-    gs_outer = gridspec.GridSpec(
+    feature_list = (
+        df["Feature"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+    cv_strats = ["Temporal_CV", "Spatial_CV"]
+
+    fig, axes = plt.subplots(
         2,
-        1,
-        height_ratios=[1, 1],
-        hspace=0.55,
-        top=0.88,
-        bottom=0.08,
-        left=0.05,
-        right=0.97,
+        len(feature_list),
+        figsize=(26, 13),
+        sharey=True,
+        sharex=True
     )
 
-    gs_temp = gridspec.GridSpecFromSubplotSpec(
-        1,
-        2,
-        subplot_spec=gs_outer[0],
-        width_ratios=[2.5, 1],
-        wspace=-0.05,
+    if len(feature_list) == 1:
+        # 保证 axes 仍然是二维数组
+        axes = [[axes[0]], [axes[1]]]
+
+    for row_idx, cv in enumerate(cv_strats):
+        for col_idx, feat in enumerate(feature_list):
+            ax = axes[row_idx][col_idx]
+
+            sub_station = df_station[
+                (df_station["CV_Strategy"] == cv) &
+                (df_station["Feature"] == feat)
+            ].copy()
+
+            sub_mean = df_mean[
+                (df_mean["CV_Strategy"] == cv) &
+                (df_mean["Feature"] == feat)
+            ].copy()
+
+            x_base, x_feat = 0, 1
+
+            for _, row in sub_station.iterrows():
+                y_b = row["Baseline_R2"]
+                y_f = row["Added_R2"]
+                delta = row["Delta_R2"]
+
+                if pd.isna(y_b) or pd.isna(y_f):
+                    continue
+
+                if delta > 0:
+                    line_color, line_alpha, line_lw, dot_color = COLOR_GAIN, 0.4, 1.2, COLOR_GAIN
+                else:
+                    line_color, line_alpha, line_lw, dot_color = COLOR_LOSS, 0.3, 0.8, COLOR_LOSS
+
+                ax.plot([x_base, x_feat], [y_b, y_f], color=line_color, alpha=line_alpha, lw=line_lw, zorder=1)
+                ax.scatter(x_base, y_b, color=COLOR_BASE, s=25, alpha=0.8, zorder=2)
+                ax.scatter(x_feat, y_f, color=dot_color, s=35, alpha=0.8, zorder=3)
+
+            if len(sub_mean) > 0:
+                mean_b = sub_mean["Mean_Baseline_R2"].iloc[0]
+                mean_f = sub_mean["Mean_Added_R2"].iloc[0]
+
+                ax.plot(
+                    [x_base, x_feat],
+                    [mean_b, mean_f],
+                    color=COLOR_MEAN,
+                    marker='D',
+                    markersize=10,
+                    lw=4,
+                    zorder=5
+                )
+
+            ax.axhline(0, color='black', lw=1.5, ls='--', alpha=0.3)
+            ax.set_xlim(-0.3, 1.3)
+            ax.set_ylim(-0.4, 1.05)
+            ax.grid(axis='y', linestyle=':', alpha=0.4)
+            sns.despine(ax=ax)
+            ax.tick_params(axis='y', labelsize=16)
+
+            if row_idx == 0:
+                ax.set_title(feat, fontsize=22, fontweight='bold', pad=20)
+                ax.tick_params(axis='x', bottom=False, labelbottom=False)
+
+            if row_idx == 1:
+                ax.set_xticks([0, 1])
+                ax.set_xticklabels(['Baseline', 'Added'], fontsize=18, fontweight='normal')
+
+            if col_idx == 0:
+                cv_label = "Temporal Generalization" if cv == 'Temporal_CV' else "Spatial Generalization"
+                ax.set_ylabel(f"{cv_label}\nTime-Averaged $R^2$", fontsize=20, fontweight='bold', labelpad=20)
+
+    legend_elements = [
+        Line2D([0], [0], color=COLOR_GAIN, lw=3, label='Positive Gain'),
+        Line2D([0], [0], color=COLOR_LOSS, lw=3, alpha=0.6, label='Negative Gain / Noise'),
+        Line2D([0], [0], color=COLOR_MEAN, marker='D', markersize=10, lw=4, label='Mean Trajectory')
+    ]
+    fig.legend(
+        handles=legend_elements,
+        loc='upper center',
+        bbox_to_anchor=(0.5, 0.05),
+        ncol=3,
+        frameon=False,
+        fontsize=18
     )
-    ax_a = fig.add_subplot(gs_temp[0])
-    ax_b = fig.add_subplot(gs_temp[1])
 
-    gs_spat = gridspec.GridSpecFromSubplotSpec(
-        1,
-        2,
-        subplot_spec=gs_outer[1],
-        width_ratios=[2.5, 1],
-        wspace=-0.05,
-    )
-    ax_c = fig.add_subplot(gs_spat[0])
-    ax_d = fig.add_subplot(gs_spat[1])
-
-    draw_shap_bar_panel(ax_a, df, "Temporal_Generalization", "a")
-    draw_rank_boxplot(ax_b, df, "Temporal_Generalization", "b")
-
-    draw_shap_bar_panel(ax_c, df, "Spatial_Generalization", "c")
-    draw_rank_boxplot(ax_d, df, "Spatial_Generalization", "d")
-
-    fig.text(
-        0.48,
-        0.96,
-        "Temporal Generalization",
-        ha="center",
-        va="center",
-        fontsize=28,
-        fontweight="bold",
-        color="black",
+    plt.suptitle(
+        "Station-level Predictive Gain (Temporal vs. Spatial)",
+        fontsize=26,
+        fontweight='bold',
+        y=0.98
     )
 
-    fig.text(
-        0.48,
-        0.465,
-        "Spatial Generalization",
-        ha="center",
-        va="center",
-        fontsize=28,
-        fontweight="bold",
-        color="black",
-    )
+    plt.subplots_adjust(top=0.90, bottom=0.10, left=0.12, right=0.95, hspace=0.15, wspace=0.02)
 
     plt.savefig(OUTPUT_PNG, dpi=300, bbox_inches="tight")
     plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")

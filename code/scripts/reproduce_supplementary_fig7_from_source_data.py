@@ -5,23 +5,18 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-import seaborn as sns
-from matplotlib.ticker import ScalarFormatter
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
-from matplotlib.patheffects import withStroke
+from matplotlib.colors import LinearSegmentedColormap
 
 warnings.filterwarnings("ignore")
 
 
-# ============================================================
-# Reproduce Supplementary Fig. 7 from public source data
-# Input:
-#   data/source_data/supplementary/Supplementary_Fig7_source_data.xlsx
-# Output:
-#   figures/supplementary/Supplementary_Fig7_reproduced_from_source_data.png
-#   figures/supplementary/Supplementary_Fig7_reproduced_from_source_data.pdf
-# ============================================================
+plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans", "Microsoft YaHei"]
+plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["text.color"] = "black"
+plt.rcParams["axes.labelcolor"] = "black"
+plt.rcParams["xtick.color"] = "black"
+plt.rcParams["ytick.color"] = "black"
 
 
 def find_repo_root():
@@ -31,569 +26,389 @@ def find_repo_root():
 
 REPO_ROOT = find_repo_root()
 
-SOURCE_DATA_XLSX = os.path.join(
+SOURCE_DATA_PATH = os.path.join(
     REPO_ROOT,
     "data",
     "source_data",
     "supplementary",
-    "Supplementary_Fig7_source_data.xlsx"
+    "Supplementary_Fig7_source_data.csv"
 )
 
-OUTPUT_DIR = os.path.join(
-    REPO_ROOT,
-    "figures",
-    "supplementary"
-)
-
+OUTPUT_DIR = os.path.join(REPO_ROOT, "figures", "supplementary")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-OUTPUT_PDF = os.path.join(
-    OUTPUT_DIR,
-    "Supplementary_Fig7_reproduced_from_source_data.pdf"
-)
-
-OUTPUT_PNG = os.path.join(
-    OUTPUT_DIR,
-    "Supplementary_Fig7_reproduced_from_source_data.png"
-)
+OUTPUT_PNG = os.path.join(OUTPUT_DIR, "Supplementary_Fig7_reproduced_from_source_data.png")
+OUTPUT_PDF = os.path.join(OUTPUT_DIR, "Supplementary_Fig7_reproduced_from_source_data.pdf")
 
 
-SOURCE_ORDER = ["Motor Vehicle", "Ship", "Industrial Source"]
-
-MAX_R = 8000
-NEAR_FIELD_MAX = 500
-KILOMETRE_SCALE_MIN = 1000
-
-COLOR_MAP = {
-    "Motor Vehicle": "#E74C3C",
-    "Ship": "#28527A",
-    "Industrial Source": "#27AE60",
-}
-
-SCALE_COLOR_MAP = {
-    "near-field": "#C9D8BF",
-    "intermediate": "#E8DDB6",
-    "kilometre-scale": "#BFD0E0",
-}
-
-SCALE_LABEL_MAP = {
-    "near-field": "near-field (≤500 m)",
-    "intermediate": "intermediate (500–1000 m)",
-    "kilometre-scale": "kilometre-scale (≥1000 m)",
-}
-
-PANEL_LABEL_KW = dict(fontsize=43, fontweight="bold", va="bottom", color="black")
-X_OFFSET_PANEL = -0.14
-Y_OFFSET_PANEL = 1.04
+CLUSTER_CMAP = LinearSegmentedColormap.from_list("shap", ["#1E88E5", "#FF0052"])
 
 
-def apply_global_style():
-    plt.rcParams.update({
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Arial", "Helvetica", "Microsoft YaHei"],
-        "axes.unicode_minus": False,
-        "mathtext.default": "regular",
-        "text.color": "black",
-        "axes.labelcolor": "black",
-        "xtick.color": "black",
-        "ytick.color": "black",
-        "axes.labelweight": "bold",
-        "axes.titlesize": 21,
-        "axes.labelsize": 20,
-        "xtick.labelsize": 16,
-        "ytick.labelsize": 16,
-        "legend.fontsize": 16,
-        "axes.linewidth": 1.8,
-        "savefig.dpi": 600,
-    })
+def draw_shap_bar_panel(ax_main, df, source_label, panel_letter):
+    df_imp = df[
+        (df["Data_Type"] == "feature_importance")
+        & (df["Source"] == source_label)
+    ].copy()
 
-    sns.set_theme(style="ticks", font="Arial")
+    df_points = df[
+        (df["Data_Type"] == "shap_point")
+        & (df["Source"] == source_label)
+    ].copy()
 
+    if df_imp.empty:
+        raise ValueError(f"No feature_importance rows for {source_label}")
 
-def to_numeric(df, cols):
-    for col in cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+    df_imp["Feature_Rank"] = pd.to_numeric(df_imp["Feature_Rank"], errors="coerce")
+    df_imp["Mean_Abs_SHAP"] = pd.to_numeric(df_imp["Mean_Abs_SHAP"], errors="coerce")
+    df_imp["Category_Total_Importance"] = pd.to_numeric(df_imp["Category_Total_Importance"], errors="coerce")
 
+    df_imp = df_imp.sort_values("Feature_Rank").head(20)
 
-def classify_scale(radius_m):
-    if pd.isna(radius_m):
-        return "NA"
-    if radius_m <= NEAR_FIELD_MAX:
-        return "near-field"
-    if radius_m >= KILOMETRE_SCALE_MIN:
-        return "kilometre-scale"
-    return "intermediate"
+    features = df_imp["Feature"].tolist()
+    display_names = df_imp["Feature_Display"].tolist()
+    mean_imp = df_imp["Mean_Abs_SHAP"].to_numpy()
+    categories = df_imp["Feature_Category"].tolist()
 
-
-def read_sheet(sheet_name):
-    return pd.read_excel(SOURCE_DATA_XLSX, sheet_name=sheet_name)
-
-
-def load_source_data():
-    if not os.path.exists(SOURCE_DATA_XLSX):
-        raise FileNotFoundError(SOURCE_DATA_XLSX)
-
-    mean_curves = read_sheet("Full_network_curves")
-    full_peak_summary = read_sheet("Full_peak_summary")
-    foldagg_band_df = read_sheet("Fold_aggregated_boot_bands")
-    boot_peak_df = read_sheet("Station_bootstrap_peaks")
-    class_prop_df = read_sheet("Scale_class_proportions")
-    station_type_df = read_sheet("Station_type_sensitivity")
-    seasonal_df = read_sheet("Seasonal_sensitivity")
-
-    mean_curves = to_numeric(mean_curves, ["Radius", "Mean_Val_R2"])
-    full_peak_summary = to_numeric(
-        full_peak_summary,
-        ["Full_Curve_Peak_Radius_m", "Full_Curve_Peak_R2"]
-    )
-    foldagg_band_df = to_numeric(
-        foldagg_band_df,
-        [
-            "Radius",
-            "FoldAgg_R2_p2_5",
-            "FoldAgg_R2_p25",
-            "FoldAgg_R2_median",
-            "FoldAgg_R2_p75",
-            "FoldAgg_R2_p97_5",
-        ]
-    )
-    boot_peak_df = to_numeric(boot_peak_df, ["Bootstrap", "Peak_Radius_m", "Peak_R2"])
-    class_prop_df = to_numeric(class_prop_df, ["Proportion"])
-    station_type_df = to_numeric(station_type_df, ["N_Stations", "Peak_Radius_m", "Peak_R2"])
-    seasonal_df = to_numeric(seasonal_df, ["N_Stations", "Peak_Radius_m", "Peak_R2"])
-
-    return (
-        mean_curves,
-        full_peak_summary,
-        foldagg_band_df,
-        boot_peak_df,
-        class_prop_df,
-        station_type_df,
-        seasonal_df,
+    cat_total = (
+        df_imp
+        .drop_duplicates(subset=["Feature_Category"])
+        .set_index("Feature_Category")["Category_Total_Importance"]
+        .to_dict()
     )
 
+    sorted_cats = sorted(cat_total.keys(), key=lambda k: cat_total[k], reverse=True)
 
-def plot_figure(
-    mean_curves,
-    full_peak_summary,
-    foldagg_band_df,
-    boot_peak_df,
-    class_prop_df,
-    station_type_df,
-    seasonal_df,
-):
-    apply_global_style()
-
-    fig = plt.figure(figsize=(25, 16.5))
-    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.30, wspace=0.32)
-
-    ax_a = fig.add_subplot(gs[0, 0])
-    ax_b = fig.add_subplot(gs[0, 1])
-    ax_c = fig.add_subplot(gs[1, 0])
-    ax_d = fig.add_subplot(gs[1, 1])
-
-    # --------------------------------------------------------
-    # Panel a: fold-aggregated bootstrap ribbons
-    # --------------------------------------------------------
-    for source in SOURCE_ORDER:
-        color = COLOR_MAP[source]
-        band = foldagg_band_df[
-            foldagg_band_df["Source"].astype(str) == source
-        ].sort_values("Radius")
-
-        if not band.empty:
-            ax_a.fill_between(
-                band["Radius"].to_numpy(dtype=float),
-                band["FoldAgg_R2_p25"].to_numpy(dtype=float),
-                band["FoldAgg_R2_p75"].to_numpy(dtype=float),
-                color=color,
-                alpha=0.20,
-                linewidth=0,
-                zorder=2,
-            )
-
-        curve = mean_curves[
-            mean_curves["Source"].astype(str) == source
-        ].sort_values("Radius")
-
-        if not curve.empty:
-            ax_a.plot(
-                curve["Radius"],
-                curve["Mean_Val_R2"],
-                color=color,
-                lw=3.2,
-                alpha=0.98,
-                label=source,
-                zorder=4,
-            )
-
-        pr = full_peak_summary[
-            full_peak_summary["Source"].astype(str) == source
-        ]
-
-        if len(pr) > 0:
-            peak_r = float(pr["Full_Curve_Peak_Radius_m"].iloc[0])
-            ax_a.axvline(
-                peak_r,
-                color=color,
-                linestyle="--",
-                lw=1.8,
-                alpha=0.65,
-                zorder=3,
-            )
-
-    ax_a.set_xscale("symlog", linthresh=1000)
-    ax_a.set_xlim(0, MAX_R)
-    ax_a.set_xticks([0, 100, 250, 500, 1000, 2000, 4000, 8000])
-
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax_a.xaxis.set_major_formatter(formatter)
-
-    all_vals = []
-    for source in SOURCE_ORDER:
-        vals = mean_curves.loc[
-            mean_curves["Source"].astype(str) == source,
-            "Mean_Val_R2"
-        ].dropna().tolist()
-        all_vals.extend(vals)
-
-    if all_vals:
-        ymin = max(0.52, min(all_vals) - 0.035)
-        ymax = min(0.70, max(all_vals) + 0.045)
-        ax_a.set_ylim(ymin, ymax)
-
-    y_label_top = ax_a.get_ylim()[1] - 0.003
-
-    for source in SOURCE_ORDER:
-        color = COLOR_MAP[source]
-        pr = full_peak_summary[
-            full_peak_summary["Source"].astype(str) == source
-        ]
-
-        if len(pr) > 0:
-            peak_r = float(pr["Full_Curve_Peak_Radius_m"].iloc[0])
-            txt = ax_a.text(
-                peak_r,
-                y_label_top,
-                f"{int(peak_r)} m",
-                color=color,
-                fontsize=16,
-                fontweight="bold",
-                rotation=90,
-                ha="center",
-                va="top",
-                zorder=5,
-            )
-            txt.set_path_effects([withStroke(linewidth=3, foreground="white")])
-
-    ax_a.set_xlabel("Buffer radius (m)", fontsize=20, fontweight="bold", labelpad=10)
-    ax_a.set_ylabel("Mean spatial validation $R^2$", fontsize=20, fontweight="bold", labelpad=10)
-    ax_a.set_title(
-        "Full-network curves and fold-aggregated bootstrap envelopes",
-        fontsize=21,
-        fontweight="bold",
-        pad=10,
-    )
-    ax_a.grid(axis="y", linestyle=":", alpha=0.55)
-
-    source_handles = [
-        Line2D([0], [0], color=COLOR_MAP[s], lw=3.2, label=s)
-        for s in SOURCE_ORDER
-    ]
-    ribbon_handles = [
-        Patch(
-            facecolor="grey",
-            edgecolor="none",
-            alpha=0.20,
-            label="25–75% fold-aggregated envelope",
-        )
-    ]
-
-    ax_a.legend(
-        handles=source_handles + ribbon_handles,
-        frameon=False,
-        loc="lower right",
-        fontsize=16,
-    )
-
-    ax_a.text(X_OFFSET_PANEL, Y_OFFSET_PANEL, "a", transform=ax_a.transAxes, **PANEL_LABEL_KW)
-    ax_a.tick_params(axis="both", labelsize=16)
-    ax_a.spines[["top", "right"]].set_visible(False)
-
-    # --------------------------------------------------------
-    # Panel b: station-bootstrap peak radius distributions
-    # --------------------------------------------------------
-    box_data = [
-        boot_peak_df.loc[
-            boot_peak_df["Source"].astype(str) == s,
-            "Peak_Radius_m"
-        ].dropna().values
-        for s in SOURCE_ORDER
-    ]
-
-    bp = ax_b.boxplot(
-        box_data,
-        patch_artist=True,
-        widths=0.42,
-        showfliers=False,
-        medianprops=dict(color="black", linewidth=2.1),
-        whiskerprops=dict(color="black", linewidth=1.5),
-        capprops=dict(color="black", linewidth=1.5),
-        boxprops=dict(edgecolor="black", linewidth=1.4),
-    )
-
-    for patch, source in zip(bp["boxes"], SOURCE_ORDER):
-        patch.set_facecolor(COLOR_MAP[source])
-        patch.set_alpha(0.34)
-
-    ax_b.axhline(500, color="grey", linestyle="--", linewidth=1.5, alpha=0.75)
-    ax_b.axhline(1000, color="grey", linestyle=":", linewidth=1.5, alpha=0.75)
-
-    ax_b.text(0.64, 520, "500 m", fontsize=16, color="grey", va="bottom")
-    ax_b.text(0.64, 1020, "1000 m", fontsize=16, color="grey", va="bottom")
-
-    ax_b.set_xticks(np.arange(1, len(SOURCE_ORDER) + 1))
-    ax_b.set_xticklabels(SOURCE_ORDER, rotation=0)
-    ax_b.set_ylabel("Station-bootstrap peak radius (m)", fontsize=20, fontweight="bold", labelpad=10)
-    ax_b.set_title(
-        "Station-bootstrap peak radius distributions",
-        fontsize=21,
-        fontweight="bold",
-        pad=10,
-    )
-    ax_b.grid(axis="y", linestyle=":", alpha=0.55)
-    ax_b.text(X_OFFSET_PANEL, Y_OFFSET_PANEL, "b", transform=ax_b.transAxes, **PANEL_LABEL_KW)
-    ax_b.tick_params(axis="both", labelsize=16)
-    ax_b.spines[["top", "right"]].set_visible(False)
-
-    # --------------------------------------------------------
-    # Panel c: scale-class stability
-    # --------------------------------------------------------
-    scale_order = ["near-field", "intermediate", "kilometre-scale"]
-    x = np.arange(len(SOURCE_ORDER))
-    bottom = np.zeros(len(SOURCE_ORDER))
-
-    for scale in scale_order:
-        vals = []
-
-        for source in SOURCE_ORDER:
-            sub = class_prop_df[
-                (class_prop_df["Source"].astype(str) == source)
-                & (class_prop_df["Scale_Class"].astype(str) == scale)
-            ]
-
-            vals.append(float(sub["Proportion"].iloc[0]) if len(sub) > 0 else 0.0)
-
-        ax_c.bar(
-            x,
-            vals,
-            bottom=bottom,
-            color=SCALE_COLOR_MAP[scale],
-            edgecolor="black",
-            linewidth=1.1,
-            width=0.78,
-            label=SCALE_LABEL_MAP[scale],
-        )
-
-        for i, v in enumerate(vals):
-            if v >= 0.12:
-                ax_c.text(
-                    x[i],
-                    bottom[i] + v / 2,
-                    f"{v * 100:.0f}%",
-                    ha="center",
-                    va="center",
-                    fontsize=16,
-                    fontweight="bold",
-                    color="black",
-                )
-
-        bottom += np.array(vals)
-
-    ax_c.set_xticks(x)
-    ax_c.set_xticklabels(SOURCE_ORDER, rotation=0)
-    ax_c.set_ylim(0, 1.0)
-    ax_c.set_ylabel("Proportion of bootstrap replicates", fontsize=20, fontweight="bold", labelpad=10)
-    ax_c.set_title("Stability of peak-scale class", fontsize=21, fontweight="bold", pad=10)
-
-    ax_c.legend(
-        frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.10),
-        ncol=3,
-        fontsize=15,
-        columnspacing=1.1,
-        handlelength=1.4,
-    )
-
-    ax_c.grid(axis="y", linestyle=":", alpha=0.55)
-    ax_c.text(X_OFFSET_PANEL, Y_OFFSET_PANEL, "c", transform=ax_c.transAxes, **PANEL_LABEL_KW)
-    ax_c.tick_params(axis="both", labelsize=16)
-    ax_c.spines[["top", "right"]].set_visible(False)
-
-    # --------------------------------------------------------
-    # Panel d: station-type and seasonal sensitivity
-    # --------------------------------------------------------
-    st_plot = station_type_df.copy()
-    st_plot["Subset"] = st_plot["Sensitivity_Setting"].astype(str)
-
-    se_plot = seasonal_df.copy()
-    se_plot["Subset"] = "Season " + se_plot["Season"].astype(str)
-
-    sens = pd.concat(
-        [
-            st_plot[["Source", "Subset", "Peak_Radius_m", "N_Stations"]],
-            se_plot[["Source", "Subset", "Peak_Radius_m", "N_Stations"]],
-        ],
-        ignore_index=True,
-    )
-
-    subset_order = [
-        "All stations",
-        "Non-traffic stations",
-        "Traffic-oriented stations",
-        "Season DJF",
-        "Season MAM",
-        "Season JJA",
-        "Season SON",
-    ]
-
-    y_labels_display = []
-
-    for subset in subset_order:
-        tmp = sens[sens["Subset"] == subset]
-
-        if len(tmp) > 0 and subset in [
-            "All stations",
-            "Non-traffic stations",
-            "Traffic-oriented stations",
-        ]:
-            n = int(tmp["N_Stations"].dropna().iloc[0])
-            y_labels_display.append(f"{subset} (n={n})")
-        else:
-            y_labels_display.append(subset)
-
-    y_positions = {
-        subset: len(subset_order) - 1 - i
-        for i, subset in enumerate(subset_order)
-    }
-    x_positions = {
-        source: i
-        for i, source in enumerate(SOURCE_ORDER)
+    cmap_base = plt.cm.Blues
+    cat_colors = {
+        cat: cmap_base(0.65 - 0.4 * (i / max(1, len(sorted_cats) - 1)))
+        for i, cat in enumerate(sorted_cats)
     }
 
-    for y in range(len(subset_order)):
-        ax_d.axhline(y, color="#EAEAEA", lw=1.0, zorder=0)
+    y_positions = np.arange(len(features))[::-1]
 
-    for x0 in range(len(SOURCE_ORDER)):
-        ax_d.axvline(x0, color="#F3F3F3", lw=1.0, zorder=0)
+    ax_top = ax_main.twiny()
 
-    for _, row in sens.iterrows():
-        source = row["Source"]
-        subset = row["Subset"]
-        peak = row["Peak_Radius_m"]
+    bar_colors = [cat_colors[c] for c in categories][::-1]
+    ax_top.barh(
+        y_positions,
+        mean_imp[::-1],
+        color=bar_colors,
+        alpha=0.85,
+        height=0.6,
+        zorder=0,
+    )
 
-        if source not in x_positions or subset not in y_positions or pd.isna(peak):
+    ax_top.set_xlabel(
+        "mean(|SHAP value|)",
+        fontsize=22,
+        fontweight="bold",
+        color="black",
+        labelpad=12,
+    )
+    ax_top.tick_params(axis="x", colors="black", labelsize=18)
+
+    if np.nanmax(mean_imp) > 0:
+        ax_top.set_xlim(0, np.nanmax(mean_imp) * 2.2)
+
+    # Scatter points
+    rng = np.random.default_rng(42)
+
+    for rank_idx, feature in enumerate(features):
+        sub = df_points[df_points["Feature"] == feature].copy()
+        if sub.empty:
             continue
 
-        xx = x_positions[source]
-        yy = y_positions[subset]
+        sub["SHAP_Value"] = pd.to_numeric(sub["SHAP_Value"], errors="coerce")
+        sub["Feature_Value_Normalized"] = pd.to_numeric(sub["Feature_Value_Normalized"], errors="coerce")
 
-        ax_d.scatter(
-            xx,
-            yy,
-            s=650,
-            color=COLOR_MAP[source],
-            edgecolor="black",
-            linewidth=1.15,
-            alpha=0.92,
+        sub = sub.dropna(subset=["SHAP_Value", "Feature_Value_Normalized"])
+
+        y_base = len(features) - 1 - rank_idx
+        jitter = rng.normal(0, 0.08, len(sub))
+
+        ax_main.scatter(
+            sub["SHAP_Value"],
+            np.full(len(sub), y_base) + jitter,
+            c=sub["Feature_Value_Normalized"],
+            cmap=CLUSTER_CMAP,
+            vmin=0,
+            vmax=1,
+            s=10,
+            alpha=0.6,
+            linewidths=0,
             zorder=3,
         )
 
-        txt = ax_d.text(
-            xx,
-            yy,
-            f"{int(peak)}",
-            ha="center",
-            va="center",
-            fontsize=15,
-            color="white",
+    xmin, xmax = ax_main.get_xlim()
+    span = xmax - xmin if xmax > xmin else 1
+    ax_main.set_xlim(xmin - span * 0.85, xmax + span * 0.40)
+
+    new_xmin, new_xmax = ax_main.get_xlim()
+    span_new = new_xmax - new_xmin
+
+    ax_main.set_yticks(np.arange(len(features)))
+    ax_main.set_yticklabels([])
+    ax_main.tick_params(axis="y", length=0)
+
+    for i, feat_name in enumerate(display_names[::-1]):
+        ax_main.text(
+            new_xmin + span_new * 0.38,
+            i,
+            feat_name,
+            fontsize=16,
             fontweight="bold",
-            zorder=4,
+            color="black",
+            va="center",
+            ha="right",
         )
-        txt.set_path_effects([withStroke(linewidth=2.4, foreground="black")])
 
-    ax_d.set_xlim(-0.5, len(SOURCE_ORDER) - 0.5)
-    ax_d.set_ylim(-0.5, len(subset_order) - 0.5)
-    ax_d.set_xticks(range(len(SOURCE_ORDER)))
-    ax_d.set_xticklabels(SOURCE_ORDER, rotation=0)
-
-    y_tick_positions = [y_positions[s] for s in subset_order]
-    ax_d.set_yticks(y_tick_positions)
-    ax_d.set_yticklabels(y_labels_display)
-
-    ax_d.set_title(
-        "Peak radii across station-type and seasonal subsets",
-        fontsize=21,
+    ax_main.set_xlabel(
+        "SHAP value (Impact on model output)",
+        fontsize=22,
         fontweight="bold",
-        pad=10,
+        color="black",
+        labelpad=12,
     )
-    ax_d.text(X_OFFSET_PANEL, Y_OFFSET_PANEL, "d", transform=ax_d.transAxes, **PANEL_LABEL_KW)
-    ax_d.tick_params(axis="both", labelsize=16)
-    ax_d.spines[["top", "right"]].set_visible(False)
 
-    ax_d.text(
-        0.99,
-        -0.12,
-        "Numbers denote peak radius (m).",
-        transform=ax_d.transAxes,
-        fontsize=16,
-        ha="right",
+    ax_main.tick_params(axis="x", labelsize=18, colors="black")
+
+    ax_main.set_zorder(ax_top.get_zorder() + 1)
+    ax_main.patch.set_visible(False)
+
+    ax_main.spines["top"].set_visible(False)
+    ax_main.spines["right"].set_visible(False)
+    ax_top.spines["right"].set_visible(False)
+
+    sm = plt.cm.ScalarMappable(
+        cmap=CLUSTER_CMAP,
+        norm=plt.Normalize(vmin=0, vmax=1),
+    )
+
+    cb = plt.colorbar(
+        sm,
+        ax=ax_main,
+        aspect=35,
+        pad=0.04,
+        shrink=0.8,
+        location="right",
+    )
+    cb.set_label(
+        "Feature Value",
+        size=18,
+        fontweight="bold",
+        color="black",
+        labelpad=5,
+    )
+    cb.ax.tick_params(labelsize=14, colors="black")
+    cb.set_ticks([0, 1])
+    cb.set_ticklabels(["Low", "High"])
+    cb.outline.set_visible(False)
+
+    ax_main.text(
+        -0.05,
+        1.13,
+        panel_letter,
+        transform=ax_main.transAxes,
+        fontsize=40,
+        fontweight="bold",
         va="top",
+    )
+
+    # Donut chart
+    ax_sun = ax_main.inset_axes([0.73, 0.28, 0.25, 0.70])
+    inner_sizes = [cat_total[c] for c in sorted_cats]
+    inner_colors = [cat_colors[c] for c in sorted_cats]
+
+    wedges, texts, autotexts = ax_sun.pie(
+        inner_sizes,
+        radius=1.0,
+        colors=inner_colors,
+        wedgeprops=dict(width=0.45, edgecolor="white", linewidth=1.5),
+        autopct=lambda pct: f"{pct:.0f}%" if pct > 3 else "",
+        pctdistance=0.75,
+    )
+
+    plt.setp(autotexts, size=15, weight="bold", color="white")
+
+    ax_sun.legend(
+        wedges,
+        sorted_cats,
+        title="Feature Categories",
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.02),
+        fontsize=14,
+        title_fontsize=16,
+        frameon=False,
+    )
+
+
+def draw_rank_boxplot(ax_box, df, source_label, panel_letter):
+    df_rank = df[
+        (df["Data_Type"] == "bootstrap_rank")
+        & (df["Source"] == source_label)
+    ].copy()
+
+    if df_rank.empty:
+        raise ValueError(f"No bootstrap rank rows for {source_label}")
+
+    df_rank["Feature_Rank"] = pd.to_numeric(df_rank["Feature_Rank"], errors="coerce")
+    df_rank["Rank_Value"] = pd.to_numeric(df_rank["Rank_Value"], errors="coerce")
+
+    features = (
+        df_rank[["Feature", "Feature_Rank"]]
+        .drop_duplicates()
+        .sort_values("Feature_Rank")["Feature"]
+        .tolist()
+    )
+
+    data_list = [
+        df_rank[df_rank["Feature"] == feat]["Rank_Value"].dropna().values
+        for feat in features
+    ]
+
+    positions = np.arange(len(data_list))[::-1]
+
+    bp = ax_box.boxplot(
+        data_list,
+        positions=positions,
+        vert=False,
+        widths=0.5,
+        patch_artist=True,
+        showfliers=True,
+    )
+
+    for box in bp["boxes"]:
+        box.set_facecolor("#E0E0E0")
+        box.set_edgecolor("black")
+        box.set_linewidth(1.8)
+
+    for median in bp["medians"]:
+        median.set_color("black")
+        median.set_linewidth(2.5)
+
+    for whisker in bp["whiskers"]:
+        whisker.set_color("black")
+        whisker.set_linewidth(1.8)
+        whisker.set_linestyle("--")
+
+    for cap in bp["caps"]:
+        cap.set_color("black")
+        cap.set_linewidth(1.8)
+
+    for flier in bp["fliers"]:
+        flier.set_marker("o")
+        flier.set_markerfacecolor("none")
+        flier.set_markeredgecolor("black")
+        flier.set_markersize(5)
+
+    ax_box.set_ylim(-0.5, 19.5)
+    ax_box.set_yticks([])
+    ax_box.set_yticklabels([])
+
+    ax_box.set_xlabel(
+        "Rank (1 = Highest Importance)",
+        fontsize=22,
+        fontweight="bold",
+        labelpad=12,
+        color="black",
+    )
+    ax_box.tick_params(axis="x", labelsize=18, colors="black")
+
+    d_max = np.nanmax([np.nanmax(vals) for vals in data_list if len(vals) > 0])
+    ax_box.set_xlim(0, max(21, d_max + 1))
+    ax_box.set_xticks([1, 5, 10, 15, 20])
+
+    ax_box.grid(False)
+
+    ax_box.spines["top"].set_visible(False)
+    ax_box.spines["right"].set_visible(False)
+    ax_box.spines["left"].set_visible(False)
+
+    ax_box.text(
+        -0.05,
+        1.13,
+        panel_letter,
+        transform=ax_box.transAxes,
+        fontsize=40,
+        fontweight="bold",
+        va="top",
+    )
+
+
+def main():
+    if not os.path.exists(SOURCE_DATA_PATH):
+        raise FileNotFoundError(SOURCE_DATA_PATH)
+
+    df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
+
+    fig = plt.figure(figsize=(24, 20))
+
+    gs_outer = gridspec.GridSpec(
+        2,
+        1,
+        height_ratios=[1, 1],
+        hspace=0.55,
+        top=0.88,
+        bottom=0.08,
+        left=0.05,
+        right=0.97,
+    )
+
+    gs_temp = gridspec.GridSpecFromSubplotSpec(
+        1,
+        2,
+        subplot_spec=gs_outer[0],
+        width_ratios=[2.5, 1],
+        wspace=-0.05,
+    )
+    ax_a = fig.add_subplot(gs_temp[0])
+    ax_b = fig.add_subplot(gs_temp[1])
+
+    gs_spat = gridspec.GridSpecFromSubplotSpec(
+        1,
+        2,
+        subplot_spec=gs_outer[1],
+        width_ratios=[2.5, 1],
+        wspace=-0.05,
+    )
+    ax_c = fig.add_subplot(gs_spat[0])
+    ax_d = fig.add_subplot(gs_spat[1])
+
+    draw_shap_bar_panel(ax_a, df, "Temporal_Generalization", "a")
+    draw_rank_boxplot(ax_b, df, "Temporal_Generalization", "b")
+
+    draw_shap_bar_panel(ax_c, df, "Spatial_Generalization", "c")
+    draw_rank_boxplot(ax_d, df, "Spatial_Generalization", "d")
+
+    fig.text(
+        0.48,
+        0.96,
+        "Temporal Generalization",
+        ha="center",
+        va="center",
+        fontsize=28,
+        fontweight="bold",
         color="black",
     )
 
-    plt.subplots_adjust(
-        left=0.08,
-        right=0.98,
-        top=0.94,
-        bottom=0.12,
-        wspace=0.30,
-        hspace=0.32,
+    fig.text(
+        0.48,
+        0.465,
+        "Spatial Generalization",
+        ha="center",
+        va="center",
+        fontsize=28,
+        fontweight="bold",
+        color="black",
     )
 
-    fig.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")
-    fig.savefig(OUTPUT_PNG, dpi=600, bbox_inches="tight")
+    plt.savefig(OUTPUT_PNG, dpi=300, bbox_inches="tight")
+    plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")
     plt.close(fig)
 
     print("Supplementary Fig. 7 reproduced from source data.")
     print(f"PNG: {OUTPUT_PNG}")
     print(f"PDF: {OUTPUT_PDF}")
-
-
-def main():
-    (
-        mean_curves,
-        full_peak_summary,
-        foldagg_band_df,
-        boot_peak_df,
-        class_prop_df,
-        station_type_df,
-        seasonal_df,
-    ) = load_source_data()
-
-    plot_figure(
-        mean_curves=mean_curves,
-        full_peak_summary=full_peak_summary,
-        foldagg_band_df=foldagg_band_df,
-        boot_peak_df=boot_peak_df,
-        class_prop_df=class_prop_df,
-        station_type_df=station_type_df,
-        seasonal_df=seasonal_df,
-    )
 
 
 if __name__ == "__main__":

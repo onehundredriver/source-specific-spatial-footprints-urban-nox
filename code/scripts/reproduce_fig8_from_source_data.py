@@ -1,6 +1,7 @@
 import os
 import warnings
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -8,7 +9,7 @@ warnings.filterwarnings("ignore")
 
 
 # ============================================================
-# Reproduce Fig. 8 from public source data
+# Reproduce Fig. 8 from compact public source data
 # Input:
 #   data/source_data/main/Fig8_source_data.csv
 # Output:
@@ -17,31 +18,14 @@ warnings.filterwarnings("ignore")
 # ============================================================
 
 
-try:
-    from pycirclize import Circos
-except ImportError as exc:
-    raise ImportError(
-        "pycirclize is required to reproduce Fig. 8. "
-        "Install it with: pip install pycirclize"
-    ) from exc
-
-
 plt.rcParams["font.family"] = "sans-serif"
 plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
 plt.rcParams["text.color"] = "black"
-plt.rcParams["font.size"] = 18
+plt.rcParams["font.size"] = 16
 
 
-ABBR_DICT = {
-    "Meteorological": "Met.",
-    "Temporal": "Temp.",
-    "Emission Source": "Emiss.",
-    "Road Topology": "Topo.",
-    "POI": "POI",
-    "Urban Canopy": "UCP",
-    "Landuse": "Landuse",
-}
+RANDOM_SEED = 42
 
 
 def find_repo_root():
@@ -71,254 +55,247 @@ OUTPUT_PNG = os.path.join(OUTPUT_DIR, "Fig8_reproduced_from_source_data.png")
 OUTPUT_PDF = os.path.join(OUTPUT_DIR, "Fig8_reproduced_from_source_data.pdf")
 
 
-def draw_chord_on_ax(ax, df, node_colors, global_cats, panel_letter, title_text):
-    local_cats = sorted(list(set(df["Source"]) | set(df["Target"])))
+def adaptive_station_sorting(plot_data, alpha=0.4):
+    subplot_c_min = plot_data["Color_Value"].quantile(0.05)
+    subplot_c_max = plot_data["Color_Value"].quantile(0.95)
+    subplot_mid = (subplot_c_min + subplot_c_max) / 2.0
 
-    node_total_val = {}
-    for cat in local_cats:
-        total = df[(df["Source"] == cat) | (df["Target"] == cat)]["Value"].sum()
-        node_total_val[cat] = float(total)
+    def calc_station_dev(group):
+        c_min = group["Color_Value"].quantile(0.05)
+        c_max = group["Color_Value"].quantile(0.95)
 
-    sectors = {
-        cat: node_total_val[cat]
-        for cat in global_cats
-        if cat in local_cats and node_total_val[cat] > 0
-    }
+        if c_max > c_min:
+            local_mid = (c_min + c_max) / 2.0
+            diff = group["Color_Value"] - local_mid
+        else:
+            diff = group["Color_Value"] - subplot_mid
 
-    if not sectors:
-        ax.text(
-            0.5,
-            0.5,
-            "No interaction edges",
-            transform=ax.transAxes,
-            ha="center",
-            va="center",
-            fontsize=20,
-            fontweight="bold",
-            color="black",
-        )
-        ax.axis("off")
-        return
+        dev = np.where(diff < 0, abs(diff) * 0.9, abs(diff) * 1.5)
 
-    circos = Circos(sectors, space=7)
+        dev_min, dev_max = dev.min(), dev.max()
+        if dev_max > dev_min:
+            group["dev_norm"] = (dev - dev_min) / (dev_max - dev_min)
+        else:
+            group["dev_norm"] = 0.0
 
-    for sector in circos.sectors:
-        track = sector.add_track((95, 100))
-        track.axis(fc=node_colors[sector.name], ec="white", linewidth=0.5)
+        return group
 
-        display_label = sector.name.replace("Parameters", "").strip()
-        track.text(
-            display_label,
-            r=110,
-            size=18,
-            weight="bold",
-            color="black",
-            orientation="horizontal",
-            ha="center",
-            va="center",
-        )
+    plot_data = plot_data.groupby("Station", group_keys=False).apply(calc_station_dev)
 
-    max_val = df["Value"].max()
-    if max_val <= 0:
-        max_val = 1.0
+    rng = np.random.default_rng(RANDOM_SEED)
+    plot_data["random_noise"] = rng.uniform(0, 1, size=len(plot_data))
+    plot_data["sort_score"] = (alpha * plot_data["dev_norm"]) + ((1 - alpha) * plot_data["random_noise"])
 
-    current_pos = {cat: 0.0 for cat in local_cats}
+    return plot_data.sort_values(by="sort_score", ascending=True)
 
-    for _, row in df.iterrows():
-        source = row["Source"]
-        target = row["Target"]
-        weight = float(row["Value"])
 
-        if source not in sectors or target not in sectors:
-            continue
+def draw_matrix_block(fig, axes_block, df_panel, panel_letter):
+    df_panel = df_panel.copy()
 
-        start_s = current_pos[source]
-        end_s = start_s + weight
-        current_pos[source] = end_s
+    base_feature_display = df_panel["Base_Feature_Display"].iloc[0]
+    color_feature_display = df_panel["Color_Feature_Display"].iloc[0]
 
-        start_t = current_pos[target]
-        end_t = start_t + weight
-        current_pos[target] = end_t
-
-        base_color = node_colors[source]
-        alpha = 0.3 + 0.4 * (weight / max_val)
-
-        circos.link(
-            (source, start_s, end_s),
-            (target, start_t, end_t),
-            color=(*base_color[:3], alpha),
-            ec="white",
-            lw=0.5,
-        )
-
-    circos.plotfig(ax=ax)
-
-    ax.set_rlim(0, 140)
-    ax.axis("off")
-
-    ax.text(
-        0.02,
-        1.0,
-        panel_letter,
-        transform=ax.transAxes,
-        fontsize=40,
-        fontweight="bold",
-        va="bottom",
-        color="black",
+    unique_distances = (
+        df_panel[["Distance_Start_m", "Distance_End_m", "Distance_Label"]]
+        .drop_duplicates()
+        .sort_values("Distance_Start_m")
+        .reset_index(drop=True)
     )
 
-    ax.text(
-        0.5,
-        0.98,
-        title_text,
-        transform=ax.transAxes,
-        fontsize=24,
-        fontweight="bold",
-        ha="center",
-        va="bottom",
-        color="black",
-    )
+    n_cols = len(unique_distances)
 
-    top5_df = df.sort_values(by="Value", ascending=False).head(5)
+    vmin = float(df_panel["Color_Vmin_P5"].dropna().iloc[0])
+    vmax = float(df_panel["Color_Vmax_P95"].dropna().iloc[0])
 
-    start_x = 0.96
-    start_y = 0.72
+    cmap = plt.cm.coolwarm
+    scatter = None
 
-    ax.text(
-        start_x,
-        start_y,
-        "Top 5\nSynergistic Pairs:",
-        fontsize=22,
-        fontweight="bold",
-        transform=ax.transAxes,
-        va="bottom",
-        color="black",
-    )
+    for col_idx, row_dist in unique_distances.iterrows():
+        d_start = int(row_dist["Distance_Start_m"])
+        d_end = int(row_dist["Distance_End_m"])
+        label = row_dist["Distance_Label"]
 
-    for i, row in enumerate(top5_df.itertuples()):
-        s_name = row.Source.replace("Parameters", "").strip()
-        t_name = row.Target.replace("Parameters", "").strip()
+        for local_row_idx, direction in enumerate(["center", "side"]):
+            ax = axes_block[local_row_idx][col_idx] if n_cols > 1 else axes_block[local_row_idx]
 
-        s_abbr = ABBR_DICT.get(s_name, s_name)
-        t_abbr = ABBR_DICT.get(t_name, t_name)
+            plot_data = df_panel[
+                (df_panel["Distance_Start_m"] == d_start)
+                & (df_panel["Distance_End_m"] == d_end)
+                & (df_panel["Direction"] == direction)
+            ].copy()
 
-        s_color = node_colors[row.Source]
-        t_color = node_colors[row.Target]
+            if plot_data.empty:
+                ax.axis("off")
+                continue
 
-        y_pos = start_y - 0.08 - (i * 0.09)
+            plot_data = adaptive_station_sorting(plot_data, alpha=0.4)
 
-        ax.plot(
-            start_x,
-            y_pos,
-            marker="s",
-            color=s_color,
-            markersize=16,
-            transform=ax.transAxes,
-            clip_on=False,
-        )
+            scatter = ax.scatter(
+                plot_data["X_Value"],
+                plot_data["SHAP_Value"],
+                c=plot_data["Color_Value"],
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                s=15,
+                alpha=0.8,
+                edgecolors="none",
+            )
 
-        ax.plot(
-            start_x + 0.022,
-            y_pos,
-            marker="s",
-            color=t_color,
-            markersize=16,
-            transform=ax.transAxes,
-            clip_on=False,
-        )
+            ax.axhline(
+                0,
+                color="gray",
+                linestyle="--",
+                linewidth=1,
+                alpha=0.7,
+            )
 
-        text_str = f"{s_abbr} ↔ {t_abbr}"
+            ax.set_yscale("symlog", linthresh=1)
 
-        ax.text(
-            start_x + 0.05,
-            y_pos,
-            text_str,
-            fontsize=18,
-            va="center",
-            ha="left",
-            transform=ax.transAxes,
-            color="black",
-        )
+            x_min = plot_data["X_Value"].min()
+            x_max = plot_data["X_Value"].max()
+
+            if x_max > x_min:
+                ax.set_xticks([x_min, x_min + (x_max - x_min) / 2, x_max])
+                ax.set_xticklabels(["Low", "Med", "High"], fontsize=12)
+            else:
+                ax.set_xticks([])
+
+            if local_row_idx == 0:
+                ax.set_title(
+                    f"Distance: {label}",
+                    fontsize=12,
+                    fontweight="bold",
+                    pad=12,
+                )
+
+            if col_idx == n_cols // 2:
+                ax.set_xlabel(
+                    f"Base Feature: {base_feature_display} ({direction.capitalize()})",
+                    fontsize=12,
+                    fontweight="bold",
+                    labelpad=4,
+                )
+
+            if col_idx == 0:
+                ax.set_ylabel(
+                    "SHAP Value\n(Impact on NO$_x$)",
+                    fontsize=12,
+                )
+
+            ax.tick_params(axis="both", labelsize=11)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+    return scatter, vmin, vmax, color_feature_display
 
 
 def main():
     if not os.path.exists(SOURCE_DATA_PATH):
         raise FileNotFoundError(SOURCE_DATA_PATH)
 
-    edges_df_all = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
+    df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
 
-    required_cols = ["Source", "Target", "Value"]
+    required_cols = [
+        "Panel",
+        "Base_Feature_Display",
+        "Color_Feature_Display",
+        "Direction",
+        "Distance_Start_m",
+        "Distance_End_m",
+        "Distance_Label",
+        "Station",
+        "X_Value",
+        "SHAP_Value",
+        "Color_Value",
+        "Color_Vmin_P5",
+        "Color_Vmax_P95",
+    ]
+
     for col in required_cols:
-        if col not in edges_df_all.columns:
+        if col not in df.columns:
             raise ValueError(f"Missing required column in Fig8_source_data.csv: {col}")
 
-    edges_df_all = edges_df_all[required_cols].copy()
-    edges_df_all["Source"] = edges_df_all["Source"].astype(str)
-    edges_df_all["Target"] = edges_df_all["Target"].astype(str)
-    edges_df_all["Value"] = pd.to_numeric(edges_df_all["Value"], errors="coerce")
-    edges_df_all = edges_df_all.dropna(subset=["Source", "Target", "Value"])
-    edges_df_all = edges_df_all[edges_df_all["Value"] > 0].copy()
+    df["Distance_Start_m"] = pd.to_numeric(df["Distance_Start_m"], errors="coerce")
+    df["Distance_End_m"] = pd.to_numeric(df["Distance_End_m"], errors="coerce")
+    df["X_Value"] = pd.to_numeric(df["X_Value"], errors="coerce")
+    df["SHAP_Value"] = pd.to_numeric(df["SHAP_Value"], errors="coerce")
+    df["Color_Value"] = pd.to_numeric(df["Color_Value"], errors="coerce")
+    df["Color_Vmin_P5"] = pd.to_numeric(df["Color_Vmin_P5"], errors="coerce")
+    df["Color_Vmax_P95"] = pd.to_numeric(df["Color_Vmax_P95"], errors="coerce")
 
-    edges_df_excl = edges_df_all[
-        ~edges_df_all["Source"].str.contains("Meteorological", case=False, na=False)
-        & ~edges_df_all["Target"].str.contains("Meteorological", case=False, na=False)
-    ].copy()
+    df = df.dropna(subset=[
+        "Panel",
+        "Distance_Start_m",
+        "X_Value",
+        "SHAP_Value",
+        "Color_Value",
+    ]).copy()
 
-    global_cats = sorted(list(set(edges_df_all["Source"]) | set(edges_df_all["Target"])))
-
-    global_node_total = {}
-    for cat in global_cats:
-        global_node_total[cat] = edges_df_all[
-            (edges_df_all["Source"] == cat) | (edges_df_all["Target"] == cat)
-        ]["Value"].sum()
-
-    global_cats_sorted = sorted(global_cats, key=lambda k: global_node_total[k], reverse=True)
-
-    cmap = plt.cm.Spectral
-    num_cats = len(global_cats_sorted)
-
-    if num_cats <= 1:
-        node_colors = {cat: cmap(0.5) for cat in global_cats_sorted}
-    else:
-        node_colors = {
-            cat: cmap(i / (num_cats - 1))
-            for i, cat in enumerate(global_cats_sorted)
-        }
+    panels = ["a", "b"]
 
     fig, axes = plt.subplots(
-        1,
-        2,
-        figsize=(25, 11),
-        subplot_kw=dict(polar=True),
+        4,
+        7,
+        figsize=(25, 22),
+        sharey=False,
     )
 
     fig.subplots_adjust(
-        wspace=0.30,
-        left=0.03,
-        right=0.88,
-        top=0.90,
-        bottom=0.0,
+        left=0.06,
+        right=0.91,
+        top=0.96,
+        bottom=0.06,
+        wspace=0.15,
+        hspace=0.42,
     )
 
-    draw_chord_on_ax(
-        axes[0],
-        edges_df_all,
-        node_colors,
-        global_cats_sorted,
-        panel_letter="a",
-        title_text="Overall Synergistic Network",
-    )
+    for i, panel in enumerate(panels):
+        df_panel = df[df["Panel"] == panel].copy()
 
-    draw_chord_on_ax(
-        axes[1],
-        edges_df_excl,
-        node_colors,
-        global_cats_sorted,
-        panel_letter="b",
-        title_text="Network Excluding Meteorological Impacts",
-    )
+        row_start = i * 2
+        axes_block = axes[row_start:row_start + 2, :]
 
-    plt.savefig(OUTPUT_PNG, dpi=400, bbox_inches="tight")
+        scatter, vmin, vmax, color_feature_display = draw_matrix_block(
+            fig=fig,
+            axes_block=axes_block,
+            df_panel=df_panel,
+            panel_letter=panel,
+        )
+
+        # Panel letter.
+        axes[row_start, 0].text(
+            -0.30,
+            1.25,
+            panel,
+            transform=axes[row_start, 0].transAxes,
+            fontsize=28,
+            fontweight="bold",
+            va="top",
+            color="black",
+        )
+
+        # Separate colorbar for each 2-row block.
+        if scatter is not None:
+            if i == 0:
+                cbar_ax = fig.add_axes([0.925, 0.56, 0.012, 0.34])
+            else:
+                cbar_ax = fig.add_axes([0.925, 0.12, 0.012, 0.34])
+
+            cbar = fig.colorbar(scatter, cax=cbar_ax)
+            cbar.outline.set_visible(False)
+            cbar.set_ticks([vmin, (vmin + vmax) / 2, vmax])
+            cbar.set_ticklabels(["Low", "Med", "High"])
+            cbar.set_label(
+                f"Interacting Feature: {color_feature_display}",
+                fontsize=12,
+                fontweight="bold",
+                rotation=270,
+                labelpad=18,
+            )
+            cbar.ax.tick_params(labelsize=11)
+
+    plt.savefig(OUTPUT_PNG, dpi=300, bbox_inches="tight")
     plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")
     plt.close(fig)
 

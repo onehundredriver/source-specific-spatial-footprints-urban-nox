@@ -1,18 +1,14 @@
 import os
 import warnings
 
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-import matplotlib.gridspec as gridspec
-from scipy.interpolate import PchipInterpolator
 
 warnings.filterwarnings("ignore")
 
 
 # ============================================================
-# Reproduce Fig. 6 from compact public source data
+# Reproduce Fig. 6 from public source data
 # Input:
 #   data/source_data/main/Fig6_source_data.csv
 # Output:
@@ -21,29 +17,31 @@ warnings.filterwarnings("ignore")
 # ============================================================
 
 
+try:
+    from pycirclize import Circos
+except ImportError as exc:
+    raise ImportError(
+        "pycirclize is required to reproduce Fig. 6. "
+        "Install it with: pip install pycirclize"
+    ) from exc
+
+
 plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "Microsoft YaHei"]
+plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
-plt.rcParams["mathtext.default"] = "regular"
 plt.rcParams["text.color"] = "black"
-plt.rcParams["axes.labelcolor"] = "black"
-plt.rcParams["xtick.color"] = "black"
-plt.rcParams["ytick.color"] = "black"
-plt.rcParams["axes.linewidth"] = 1.5
+plt.rcParams["font.size"] = 18
 
-COLOR_CENTER = "#D55E00"
-COLOR_SIDE = "#0072B2"
-CMAP_SHAP = LinearSegmentedColormap.from_list("shap", ["#1E88E5", "#FF0052"])
 
-STANDARD_LABELS = [
-    "0-50m",
-    "50-100m",
-    "100-200m",
-    "200-500m",
-    "500-1000m",
-    "1000-2000m",
-    "2000-3000m",
-]
+ABBR_DICT = {
+    "Meteorological": "Met.",
+    "Temporal": "Temp.",
+    "Emission Source": "Emiss.",
+    "Road Topology": "Topo.",
+    "POI": "POI",
+    "Urban Canopy": "UCP",
+    "Landuse": "Landuse",
+}
 
 
 def find_repo_root():
@@ -73,258 +71,252 @@ OUTPUT_PNG = os.path.join(OUTPUT_DIR, "Fig6_reproduced_from_source_data.png")
 OUTPUT_PDF = os.path.join(OUTPUT_DIR, "Fig6_reproduced_from_source_data.pdf")
 
 
-def draw_dual_funnel_panel(fig, outer_gs, df_panel, category_name, feature_display, panel_letter):
-    inner_gs = gridspec.GridSpecFromSubplotSpec(
-        2,
-        1,
-        subplot_spec=outer_gs,
-        hspace=0.1,
-    )
+def draw_chord_on_ax(ax, df, node_colors, global_cats, panel_letter, title_text):
+    local_cats = sorted(list(set(df["Source"]) | set(df["Target"])))
 
-    ax_center = fig.add_subplot(inner_gs[0])
-    ax_side = fig.add_subplot(inner_gs[1], sharex=ax_center)
+    node_total_val = {}
+    for cat in local_cats:
+        total = df[(df["Source"] == cat) | (df["Target"] == cat)]["Value"].sum()
+        node_total_val[cat] = float(total)
 
-    sc_global = None
-    y_abs_max = 0.0
+    sectors = {
+        cat: node_total_val[cat]
+        for cat in global_cats
+        if cat in local_cats and node_total_val[cat] > 0
+    }
 
-    def plot_location(ax, location, color_env):
-        nonlocal sc_global
-        nonlocal y_abs_max
-
-        df_env = df_panel[
-            (df_panel["Location"] == location)
-            & (df_panel["Data_Type"] == "envelope")
-        ].copy()
-
-        df_scatter = df_panel[
-            (df_panel["Location"] == location)
-            & (df_panel["Data_Type"] == "scatter_sample")
-        ].copy()
-
-        if df_env.empty:
-            return
-
-        df_env["Bin_Order"] = pd.to_numeric(df_env["Bin_Order"], errors="coerce")
-        df_env["Upper_Envelope"] = pd.to_numeric(df_env["Upper_Envelope"], errors="coerce")
-        df_env["Lower_Envelope"] = pd.to_numeric(df_env["Lower_Envelope"], errors="coerce")
-        df_env = df_env.sort_values("Bin_Order")
-
-        x_pos = df_env["Bin_Order"].to_numpy(dtype=float)
-        upper_env = df_env["Upper_Envelope"].fillna(0).to_numpy(dtype=float)
-        lower_env = df_env["Lower_Envelope"].fillna(0).to_numpy(dtype=float)
-
-        ax.axhline(0, color="black", linewidth=1.5, alpha=0.8, zorder=2)
-
-        if len(x_pos) > 1:
-            x_smooth = np.linspace(np.nanmin(x_pos), np.nanmax(x_pos), 300)
-            upper_smooth = PchipInterpolator(x_pos, upper_env)(x_smooth)
-            lower_smooth = PchipInterpolator(x_pos, lower_env)(x_smooth)
-
-            upper_smooth = np.clip(upper_smooth, 0, None)
-            lower_smooth = np.clip(lower_smooth, None, 0)
-
-            ax.fill_between(
-                x_smooth,
-                upper_smooth,
-                lower_smooth,
-                color=color_env,
-                alpha=0.15,
-                zorder=1,
-            )
-            ax.plot(
-                x_smooth,
-                upper_smooth,
-                color=color_env,
-                ls="--",
-                lw=2.0,
-                alpha=0.9,
-                zorder=1,
-            )
-            ax.plot(
-                x_smooth,
-                lower_smooth,
-                color=color_env,
-                ls="--",
-                lw=2.0,
-                alpha=0.9,
-                zorder=1,
-            )
-
-            y_abs_max = max(
-                y_abs_max,
-                float(np.nanmax(np.abs(upper_smooth))) if len(upper_smooth) else 0,
-                float(np.nanmax(np.abs(lower_smooth))) if len(lower_smooth) else 0,
-            )
-
-        if not df_scatter.empty:
-            df_scatter["Point_X"] = pd.to_numeric(df_scatter["Point_X"], errors="coerce")
-            df_scatter["SHAP_Value"] = pd.to_numeric(df_scatter["SHAP_Value"], errors="coerce")
-            df_scatter["Feature_Value_Norm"] = pd.to_numeric(df_scatter["Feature_Value_Norm"], errors="coerce")
-
-            df_scatter = df_scatter.dropna(subset=["Point_X", "SHAP_Value", "Feature_Value_Norm"])
-
-            if not df_scatter.empty:
-                sc = ax.scatter(
-                    df_scatter["Point_X"],
-                    df_scatter["SHAP_Value"],
-                    c=df_scatter["Feature_Value_Norm"],
-                    cmap=CMAP_SHAP,
-                    vmin=0,
-                    vmax=1,
-                    s=20,
-                    alpha=0.7,
-                    edgecolor="none",
-                    zorder=3,
-                )
-                sc_global = sc
-                y_abs_max = max(y_abs_max, float(df_scatter["SHAP_Value"].abs().max()))
-
-        title = "UPWIND (Center)" if location == "Center" else "CROSSWIND (Side)"
+    if not sectors:
         ax.text(
-            0.02,
-            0.90,
-            title,
+            0.5,
+            0.5,
+            "No interaction edges",
             transform=ax.transAxes,
-            color="black",
-            fontsize=18,
+            ha="center",
+            va="center",
+            fontsize=20,
             fontweight="bold",
+            color="black",
+        )
+        ax.axis("off")
+        return
+
+    circos = Circos(sectors, space=7)
+
+    for sector in circos.sectors:
+        track = sector.add_track((95, 100))
+        track.axis(fc=node_colors[sector.name], ec="white", linewidth=0.5)
+
+        display_label = sector.name.replace("Parameters", "").strip()
+        track.text(
+            display_label,
+            r=110,
+            size=18,
+            weight="bold",
+            color="black",
+            orientation="horizontal",
+            ha="center",
+            va="center",
         )
 
-        ax.grid(False)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+    max_val = df["Value"].max()
+    if max_val <= 0:
+        max_val = 1.0
 
-    plot_location(ax_center, "Center", COLOR_CENTER)
-    plot_location(ax_side, "Side", COLOR_SIDE)
+    current_pos = {cat: 0.0 for cat in local_cats}
 
-    y_max = y_abs_max * 1.15 if y_abs_max > 0 else 1.0
-    ax_center.set_ylim(-y_max, y_max)
-    ax_side.set_ylim(-y_max, y_max)
+    for _, row in df.iterrows():
+        source = row["Source"]
+        target = row["Target"]
+        weight = float(row["Value"])
 
-    ax_center.tick_params(labelbottom=False, bottom=False, labelsize=18, colors="black")
-    ax_side.tick_params(axis="both", labelsize=18, colors="black")
+        if source not in sectors or target not in sectors:
+            continue
 
-    ax_side.set_xticks(np.arange(len(STANDARD_LABELS)))
-    ax_side.set_xticklabels(
-        STANDARD_LABELS,
-        fontsize=18,
-        fontweight="bold",
-        rotation=25,
-        ha="center",
-        color="black",
-    )
+        start_s = current_pos[source]
+        end_s = start_s + weight
+        current_pos[source] = end_s
 
-    ax_center.set_ylabel("SHAP Value", fontsize=22, fontweight="bold", color="black")
-    ax_side.set_ylabel("SHAP Value", fontsize=22, fontweight="bold", color="black")
+        start_t = current_pos[target]
+        end_t = start_t + weight
+        current_pos[target] = end_t
 
-    ax_center.set_title(
-        f"{category_name} ({feature_display})",
-        fontsize=24,
-        fontweight="bold",
-        pad=15,
-        color="black",
-    )
+        base_color = node_colors[source]
+        alpha = 0.3 + 0.4 * (weight / max_val)
 
-    ax_center.text(
-        -0.09,
-        1.20,
+        circos.link(
+            (source, start_s, end_s),
+            (target, start_t, end_t),
+            color=(*base_color[:3], alpha),
+            ec="white",
+            lw=0.5,
+        )
+
+    circos.plotfig(ax=ax)
+
+    ax.set_rlim(0, 140)
+    ax.axis("off")
+
+    ax.text(
+        0.02,
+        1.0,
         panel_letter,
-        transform=ax_center.transAxes,
+        transform=ax.transAxes,
         fontsize=40,
         fontweight="bold",
-        va="top",
+        va="bottom",
         color="black",
     )
 
-    return sc_global
+    ax.text(
+        0.5,
+        0.98,
+        title_text,
+        transform=ax.transAxes,
+        fontsize=24,
+        fontweight="bold",
+        ha="center",
+        va="bottom",
+        color="black",
+    )
+
+    top5_df = df.sort_values(by="Value", ascending=False).head(5)
+
+    start_x = 0.96
+    start_y = 0.72
+
+    ax.text(
+        start_x,
+        start_y,
+        "Top 5\nSynergistic Pairs:",
+        fontsize=22,
+        fontweight="bold",
+        transform=ax.transAxes,
+        va="bottom",
+        color="black",
+    )
+
+    for i, row in enumerate(top5_df.itertuples()):
+        s_name = row.Source.replace("Parameters", "").strip()
+        t_name = row.Target.replace("Parameters", "").strip()
+
+        s_abbr = ABBR_DICT.get(s_name, s_name)
+        t_abbr = ABBR_DICT.get(t_name, t_name)
+
+        s_color = node_colors[row.Source]
+        t_color = node_colors[row.Target]
+
+        y_pos = start_y - 0.08 - (i * 0.09)
+
+        ax.plot(
+            start_x,
+            y_pos,
+            marker="s",
+            color=s_color,
+            markersize=16,
+            transform=ax.transAxes,
+            clip_on=False,
+        )
+
+        ax.plot(
+            start_x + 0.022,
+            y_pos,
+            marker="s",
+            color=t_color,
+            markersize=16,
+            transform=ax.transAxes,
+            clip_on=False,
+        )
+
+        text_str = f"{s_abbr} ↔ {t_abbr}"
+
+        ax.text(
+            start_x + 0.05,
+            y_pos,
+            text_str,
+            fontsize=18,
+            va="center",
+            ha="left",
+            transform=ax.transAxes,
+            color="black",
+        )
 
 
 def main():
     if not os.path.exists(SOURCE_DATA_PATH):
         raise FileNotFoundError(SOURCE_DATA_PATH)
 
-    df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
+    edges_df_all = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
 
-    required_cols = [
-        "Panel",
-        "Data_Type",
-        "Category",
-        "Feature_Display",
-        "Location",
-        "Distance_Label",
-        "Bin_Order",
-        "Point_X",
-        "SHAP_Value",
-        "Feature_Value_Norm",
-        "Upper_Envelope",
-        "Lower_Envelope",
-    ]
-
+    required_cols = ["Source", "Target", "Value"]
     for col in required_cols:
-        if col not in df.columns:
+        if col not in edges_df_all.columns:
             raise ValueError(f"Missing required column in Fig6_source_data.csv: {col}")
 
-    fig = plt.figure(figsize=(26, 20))
-    gs = gridspec.GridSpec(
+    edges_df_all = edges_df_all[required_cols].copy()
+    edges_df_all["Source"] = edges_df_all["Source"].astype(str)
+    edges_df_all["Target"] = edges_df_all["Target"].astype(str)
+    edges_df_all["Value"] = pd.to_numeric(edges_df_all["Value"], errors="coerce")
+    edges_df_all = edges_df_all.dropna(subset=["Source", "Target", "Value"])
+    edges_df_all = edges_df_all[edges_df_all["Value"] > 0].copy()
+
+    edges_df_excl = edges_df_all[
+        ~edges_df_all["Source"].str.contains("Meteorological", case=False, na=False)
+        & ~edges_df_all["Target"].str.contains("Meteorological", case=False, na=False)
+    ].copy()
+
+    global_cats = sorted(list(set(edges_df_all["Source"]) | set(edges_df_all["Target"])))
+
+    global_node_total = {}
+    for cat in global_cats:
+        global_node_total[cat] = edges_df_all[
+            (edges_df_all["Source"] == cat) | (edges_df_all["Target"] == cat)
+        ]["Value"].sum()
+
+    global_cats_sorted = sorted(global_cats, key=lambda k: global_node_total[k], reverse=True)
+
+    cmap = plt.cm.Spectral
+    num_cats = len(global_cats_sorted)
+
+    if num_cats <= 1:
+        node_colors = {cat: cmap(0.5) for cat in global_cats_sorted}
+    else:
+        node_colors = {
+            cat: cmap(i / (num_cats - 1))
+            for i, cat in enumerate(global_cats_sorted)
+        }
+
+    fig, axes = plt.subplots(
+        1,
         2,
-        2,
-        hspace=0.35,
-        wspace=0.20,
+        figsize=(25, 11),
+        subplot_kw=dict(polar=True),
+    )
+
+    fig.subplots_adjust(
+        wspace=0.30,
+        left=0.03,
+        right=0.88,
         top=0.90,
-        bottom=0.10,
-        left=0.06,
-        right=0.92,
+        bottom=0.0,
     )
 
-    panel_order = ["a", "b", "c", "d"]
-    sc_global = None
-
-    for idx, panel_letter in enumerate(panel_order):
-        df_panel = df[df["Panel"] == panel_letter].copy()
-
-        if df_panel.empty:
-            continue
-
-        category_name = df_panel["Category"].dropna().iloc[0]
-        feature_display = df_panel["Feature_Display"].dropna().iloc[0]
-
-        sc = draw_dual_funnel_panel(
-            fig=fig,
-            outer_gs=gs[idx // 2, idx % 2],
-            df_panel=df_panel,
-            category_name=category_name,
-            feature_display=feature_display,
-            panel_letter=panel_letter,
-        )
-
-        if sc is not None:
-            sc_global = sc
-
-    fig.text(
-        0.48,
-        0.96,
-        "Dual-Funnel Decay of Local Impact Across Spatial Gradients",
-        ha="center",
-        va="center",
-        fontsize=28,
-        fontweight="bold",
-        color="black",
+    draw_chord_on_ax(
+        axes[0],
+        edges_df_all,
+        node_colors,
+        global_cats_sorted,
+        panel_letter="a",
+        title_text="Overall Synergistic Network",
     )
 
-    if sc_global is not None:
-        cbar_ax = fig.add_axes([0.94, 0.25, 0.01, 0.50])
-        cb = fig.colorbar(sc_global, cax=cbar_ax)
-        cb.set_label(
-            "Feature Value (Low → High)",
-            size=22,
-            fontweight="bold",
-            labelpad=5,
-            color="black",
-        )
-        cb.set_ticks([0, 1])
-        cb.ax.tick_params(size=0, labelsize=18, colors="black")
-        cb.set_ticklabels(["Low", "High"], fontsize=18, fontweight="bold", color="black")
-        cb.outline.set_visible(False)
+    draw_chord_on_ax(
+        axes[1],
+        edges_df_excl,
+        node_colors,
+        global_cats_sorted,
+        panel_letter="b",
+        title_text="Network Excluding Meteorological Impacts",
+    )
 
     plt.savefig(OUTPUT_PNG, dpi=400, bbox_inches="tight")
     plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")

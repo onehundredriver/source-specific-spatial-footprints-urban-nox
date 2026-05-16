@@ -3,15 +3,16 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.gridspec as gridspec
+from scipy.interpolate import PchipInterpolator
 
 warnings.filterwarnings("ignore")
 
 
 # ============================================================
-# Reproduce Supplementary Fig. 3 from public source data
+# Reproduce Supplementary Fig. 3 from compact public source data
 # Input:
 #   data/source_data/supplementary/Supplementary_Fig3_source_data.csv
 # Output:
@@ -21,19 +22,28 @@ warnings.filterwarnings("ignore")
 
 
 plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans", "Microsoft YaHei"]
+plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
 plt.rcParams["mathtext.default"] = "regular"
+plt.rcParams["text.color"] = "black"
+plt.rcParams["axes.labelcolor"] = "black"
+plt.rcParams["xtick.color"] = "black"
+plt.rcParams["ytick.color"] = "black"
+plt.rcParams["axes.linewidth"] = 1.5
 
-sns.set_theme(style="white", font="Arial")
+COLOR_CENTER = "#D55E00"
+COLOR_SIDE = "#0072B2"
+CMAP_SHAP = LinearSegmentedColormap.from_list("shap", ["#1E88E5", "#FF0052"])
 
-C_NEG = "#3C5488"
-C_ZERO = "#FFFFFF"
-C_POS = "#DC0000"
-CMAP_DIVERGING = LinearSegmentedColormap.from_list(
-    "UrbanDiverging",
-    [C_NEG, C_ZERO, C_POS],
-)
+STANDARD_LABELS = [
+    "0-50m",
+    "50-100m",
+    "100-200m",
+    "200-500m",
+    "500-1000m",
+    "1000-2000m",
+    "2000-3000m",
+]
 
 
 def find_repo_root():
@@ -59,15 +69,174 @@ OUTPUT_DIR = os.path.join(
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-OUTPUT_PNG = os.path.join(
-    OUTPUT_DIR,
-    "Supplementary_Fig3_reproduced_from_source_data.png"
-)
+OUTPUT_PNG = os.path.join(OUTPUT_DIR, "Supplementary_Fig3_reproduced_from_source_data.png")
+OUTPUT_PDF = os.path.join(OUTPUT_DIR, "Supplementary_Fig3_reproduced_from_source_data.pdf")
 
-OUTPUT_PDF = os.path.join(
-    OUTPUT_DIR,
-    "Supplementary_Fig3_reproduced_from_source_data.pdf"
-)
+
+def draw_dual_funnel_panel(fig, outer_gs, df_panel, category_name, feature_display, panel_letter):
+    inner_gs = gridspec.GridSpecFromSubplotSpec(
+        2,
+        1,
+        subplot_spec=outer_gs,
+        hspace=0.1,
+    )
+
+    ax_center = fig.add_subplot(inner_gs[0])
+    ax_side = fig.add_subplot(inner_gs[1], sharex=ax_center)
+
+    sc_global = None
+    y_abs_max = 0.0
+
+    def plot_location(ax, location, color_env):
+        nonlocal sc_global
+        nonlocal y_abs_max
+
+        df_env = df_panel[
+            (df_panel["Location"] == location)
+            & (df_panel["Data_Type"] == "envelope")
+        ].copy()
+
+        df_scatter = df_panel[
+            (df_panel["Location"] == location)
+            & (df_panel["Data_Type"] == "scatter_sample")
+        ].copy()
+
+        if df_env.empty:
+            return
+
+        df_env["Bin_Order"] = pd.to_numeric(df_env["Bin_Order"], errors="coerce")
+        df_env["Upper_Envelope"] = pd.to_numeric(df_env["Upper_Envelope"], errors="coerce")
+        df_env["Lower_Envelope"] = pd.to_numeric(df_env["Lower_Envelope"], errors="coerce")
+        df_env = df_env.sort_values("Bin_Order")
+
+        x_pos = df_env["Bin_Order"].to_numpy(dtype=float)
+        upper_env = df_env["Upper_Envelope"].fillna(0).to_numpy(dtype=float)
+        lower_env = df_env["Lower_Envelope"].fillna(0).to_numpy(dtype=float)
+
+        ax.axhline(0, color="black", linewidth=1.5, alpha=0.8, zorder=2)
+
+        if len(x_pos) > 1:
+            x_smooth = np.linspace(np.nanmin(x_pos), np.nanmax(x_pos), 300)
+            upper_smooth = PchipInterpolator(x_pos, upper_env)(x_smooth)
+            lower_smooth = PchipInterpolator(x_pos, lower_env)(x_smooth)
+
+            upper_smooth = np.clip(upper_smooth, 0, None)
+            lower_smooth = np.clip(lower_smooth, None, 0)
+
+            ax.fill_between(
+                x_smooth,
+                upper_smooth,
+                lower_smooth,
+                color=color_env,
+                alpha=0.15,
+                zorder=1,
+            )
+            ax.plot(
+                x_smooth,
+                upper_smooth,
+                color=color_env,
+                ls="--",
+                lw=2.0,
+                alpha=0.9,
+                zorder=1,
+            )
+            ax.plot(
+                x_smooth,
+                lower_smooth,
+                color=color_env,
+                ls="--",
+                lw=2.0,
+                alpha=0.9,
+                zorder=1,
+            )
+
+            y_abs_max = max(
+                y_abs_max,
+                float(np.nanmax(np.abs(upper_smooth))) if len(upper_smooth) else 0,
+                float(np.nanmax(np.abs(lower_smooth))) if len(lower_smooth) else 0,
+            )
+
+        if not df_scatter.empty:
+            df_scatter["Point_X"] = pd.to_numeric(df_scatter["Point_X"], errors="coerce")
+            df_scatter["SHAP_Value"] = pd.to_numeric(df_scatter["SHAP_Value"], errors="coerce")
+            df_scatter["Feature_Value_Norm"] = pd.to_numeric(df_scatter["Feature_Value_Norm"], errors="coerce")
+
+            df_scatter = df_scatter.dropna(subset=["Point_X", "SHAP_Value", "Feature_Value_Norm"])
+
+            if not df_scatter.empty:
+                sc = ax.scatter(
+                    df_scatter["Point_X"],
+                    df_scatter["SHAP_Value"],
+                    c=df_scatter["Feature_Value_Norm"],
+                    cmap=CMAP_SHAP,
+                    vmin=0,
+                    vmax=1,
+                    s=20,
+                    alpha=0.7,
+                    edgecolor="none",
+                    zorder=3,
+                )
+                sc_global = sc
+                y_abs_max = max(y_abs_max, float(df_scatter["SHAP_Value"].abs().max()))
+
+        title = "UPWIND (Center)" if location == "Center" else "CROSSWIND (Side)"
+        ax.text(
+            0.02,
+            0.90,
+            title,
+            transform=ax.transAxes,
+            color="black",
+            fontsize=18,
+            fontweight="bold",
+        )
+
+        ax.grid(False)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    plot_location(ax_center, "Center", COLOR_CENTER)
+    plot_location(ax_side, "Side", COLOR_SIDE)
+
+    y_max = y_abs_max * 1.15 if y_abs_max > 0 else 1.0
+    ax_center.set_ylim(-y_max, y_max)
+    ax_side.set_ylim(-y_max, y_max)
+
+    ax_center.tick_params(labelbottom=False, bottom=False, labelsize=18, colors="black")
+    ax_side.tick_params(axis="both", labelsize=18, colors="black")
+
+    ax_side.set_xticks(np.arange(len(STANDARD_LABELS)))
+    ax_side.set_xticklabels(
+        STANDARD_LABELS,
+        fontsize=18,
+        fontweight="bold",
+        rotation=25,
+        ha="center",
+        color="black",
+    )
+
+    ax_center.set_ylabel("SHAP Value", fontsize=22, fontweight="bold", color="black")
+    ax_side.set_ylabel("SHAP Value", fontsize=22, fontweight="bold", color="black")
+
+    ax_center.set_title(
+        f"{category_name} ({feature_display})",
+        fontsize=24,
+        fontweight="bold",
+        pad=15,
+        color="black",
+    )
+
+    ax_center.text(
+        -0.09,
+        1.20,
+        panel_letter,
+        transform=ax_center.transAxes,
+        fontsize=40,
+        fontweight="bold",
+        va="top",
+        color="black",
+    )
+
+    return sc_global
 
 
 def main():
@@ -77,179 +246,87 @@ def main():
     df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
 
     required_cols = [
-        "Model",
-        "CV_Strategy",
-        "Time_Scale",
-        "Time_Label",
+        "Panel",
+        "Data_Type",
+        "Category",
         "Feature_Display",
-        "Feature_Order",
-        "Delta_R2_Percent",
-        "Feature_R2",
-        "Annotation_Text",
-        "Column_Order",
+        "Location",
+        "Distance_Label",
+        "Bin_Order",
+        "Point_X",
+        "SHAP_Value",
+        "Feature_Value_Norm",
+        "Upper_Envelope",
+        "Lower_Envelope",
     ]
 
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"Supplementary_Fig3_source_data.csv missing columns: {missing}")
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Missing required column in Supplementary_Fig3_source_data.csv: {col}")
 
-    df["Feature_Order"] = pd.to_numeric(df["Feature_Order"], errors="coerce")
-    df["Column_Order"] = pd.to_numeric(df["Column_Order"], errors="coerce")
-    df["Delta_R2_Percent"] = pd.to_numeric(df["Delta_R2_Percent"], errors="coerce")
-    df["Feature_R2"] = pd.to_numeric(df["Feature_R2"], errors="coerce")
-    df["Annotation_Text"] = df["Annotation_Text"].fillna("")
-
-    df = df.sort_values(["Feature_Order", "Column_Order"]).copy()
-
-    ordered_features = (
-        df[["Feature_Display", "Feature_Order"]]
-        .drop_duplicates()
-        .sort_values("Feature_Order")["Feature_Display"]
-        .tolist()
-    )
-
-    ordered_cols_df = (
-        df[["Model", "CV_Strategy", "Time_Scale", "Time_Label", "Column_Order"]]
-        .drop_duplicates()
-        .sort_values("Column_Order")
-        .reset_index(drop=True)
-    )
-
-    ordered_cols = [
-        (row["Model"], row["CV_Strategy"], row["Time_Scale"])
-        for _, row in ordered_cols_df.iterrows()
-    ]
-
-    df["Col_Tuple"] = list(zip(df["Model"], df["CV_Strategy"], df["Time_Scale"]))
-
-    pivot_delta = (
-        df
-        .pivot(index="Feature_Display", columns="Col_Tuple", values="Delta_R2_Percent")
-        .reindex(index=ordered_features, columns=ordered_cols)
-    )
-
-    annot_df = (
-        df
-        .pivot(index="Feature_Display", columns="Col_Tuple", values="Annotation_Text")
-        .reindex(index=ordered_features, columns=ordered_cols)
-    )
-
-    fig, (ax, cbar_ax) = plt.subplots(
-        1,
+    fig = plt.figure(figsize=(26, 20))
+    gs = gridspec.GridSpec(
         2,
-        figsize=(20, 11),
-        gridspec_kw={"width_ratios": [40, 1], "wspace": 0.04},
-    )
-
-    sns.heatmap(
-        pivot_delta,
-        cmap=CMAP_DIVERGING,
-        center=0,
-        annot=annot_df,
-        fmt="",
-        linewidths=1.2,
-        linecolor="white",
-        ax=ax,
-        cbar_ax=cbar_ax,
-        cbar_kws={"label": r"Marginal Contribution ($\Delta R^2$, %)"},
-        annot_kws={"size": 13, "weight": "bold"},
-    )
-
-    cbar_ax.yaxis.label.set_size(16)
-    cbar_ax.tick_params(labelsize=14)
-
-    ax.set_ylabel(
-        "Aggregation Radii",
-        fontsize=18,
-        labelpad=15,
-        fontweight="bold",
-    )
-
-    ax.set_xticks(np.arange(len(ordered_cols)) + 0.5)
-    ax.set_xticklabels(
-        [row["Time_Label"] for _, row in ordered_cols_df.iterrows()],
-        rotation=0,
-        fontsize=15,
-    )
-
-    ax.tick_params(axis="y", labelsize=15)
-
-    # Group separators: after LGBM spatial, after LGBM temporal / RF spatial boundary, after RF spatial.
-    for x_pos in [4, 8, 12]:
-        ax.axvline(
-            x=x_pos,
-            color="black",
-            linewidth=(4 if x_pos == 8 else 1.5),
-            zorder=5,
-        )
-
-    ax.text(
-        4,
-        -1.0,
-        "LightGBM",
-        ha="center",
-        va="bottom",
-        fontsize=18,
-        fontweight="bold",
-        color="black",
-        clip_on=False,
-    )
-
-    ax.text(
-        12,
-        -1.0,
-        "Random Forest",
-        ha="center",
-        va="bottom",
-        fontsize=18,
-        fontweight="bold",
-        color="black",
-        clip_on=False,
-    )
-
-    for x_idx, label in zip(
-        [2, 6, 10, 14],
-        ["Spatial CV", "Temporal CV"] * 2,
-    ):
-        ax.text(
-            x_idx,
-            -0.3,
-            label,
-            ha="center",
-            va="bottom",
-            fontsize=16,
-            fontweight="bold",
-            color="black",
-            clip_on=False,
-        )
-
-    ax.set_title(
-        "Sensitivity Analysis: Impact of Aggregation Radii on Model Performance",
-        fontsize=20,
-        fontweight="bold",
-        pad=110,
-    )
-
-    footnote = "* p < 0.05, ** p < 0.01, *** p < 0.001 (One-tailed paired t-test across 58 monitoring stations)"
-    fig.text(
-        0.06,
-        0.015,
-        footnote,
-        ha="left",
-        va="bottom",
-        fontsize=14,
-        style="italic",
-        color="#333333",
-    )
-
-    plt.subplots_adjust(
-        top=0.80,
+        2,
+        hspace=0.35,
+        wspace=0.20,
+        top=0.90,
         bottom=0.10,
-        left=0.1,
-        right=0.9,
+        left=0.06,
+        right=0.92,
     )
 
-    plt.savefig(OUTPUT_PNG, dpi=300, bbox_inches="tight")
+    panel_order = ["a", "b", "c", "d"]
+    sc_global = None
+
+    for idx, panel_letter in enumerate(panel_order):
+        df_panel = df[df["Panel"] == panel_letter].copy()
+
+        if df_panel.empty:
+            continue
+
+        category_name = df_panel["Category"].dropna().iloc[0]
+        feature_display = df_panel["Feature_Display"].dropna().iloc[0]
+
+        sc = draw_dual_funnel_panel(
+            fig=fig,
+            outer_gs=gs[idx // 2, idx % 2],
+            df_panel=df_panel,
+            category_name=category_name,
+            feature_display=feature_display,
+            panel_letter=panel_letter,
+        )
+
+        if sc is not None:
+            sc_global = sc
+
+    fig.text(
+        0.48,
+        0.96,
+        "Dual-Funnel Decay of Local Impact Across Spatial Gradients",
+        ha="center",
+        va="center",
+        fontsize=28,
+        fontweight="bold",
+        color="black",
+    )
+
+    if sc_global is not None:
+        cbar_ax = fig.add_axes([0.94, 0.25, 0.01, 0.50])
+        cb = fig.colorbar(sc_global, cax=cbar_ax)
+        cb.set_label(
+            "Feature Value (Low → High)",
+            size=22,
+            fontweight="bold",
+            labelpad=5,
+            color="black",
+        )
+        cb.set_ticks([0, 1])
+        cb.ax.tick_params(size=0, labelsize=18, colors="black")
+        cb.set_ticklabels(["Low", "High"], fontsize=18, fontweight="bold", color="black")
+        cb.outline.set_visible(False)
+
+    plt.savefig(OUTPUT_PNG, dpi=400, bbox_inches="tight")
     plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")
     plt.close(fig)
 

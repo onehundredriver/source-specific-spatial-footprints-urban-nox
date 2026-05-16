@@ -1,5 +1,4 @@
 import os
-import re
 import warnings
 
 import numpy as np
@@ -90,75 +89,23 @@ def adaptive_station_sorting(plot_data, alpha=0.4):
     return plot_data.sort_values(by="sort_score", ascending=True)
 
 
-def main():
-    if not os.path.exists(SOURCE_DATA_PATH):
-        raise FileNotFoundError(SOURCE_DATA_PATH)
+def draw_matrix_block(fig, axes_block, df_panel, panel_letter):
+    df_panel = df_panel.copy()
 
-    df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
-
-    required_cols = [
-        "Base_Feature",
-        "Color_Feature",
-        "Direction",
-        "Distance_Start_m",
-        "Distance_End_m",
-        "Distance_Label",
-        "Station",
-        "X_Value",
-        "SHAP_Value",
-        "Color_Value",
-        "Color_Vmin_P5",
-        "Color_Vmax_P95",
-    ]
-
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column in Fig9_source_data.csv: {col}")
-
-    df["Distance_Start_m"] = pd.to_numeric(df["Distance_Start_m"], errors="coerce")
-    df["Distance_End_m"] = pd.to_numeric(df["Distance_End_m"], errors="coerce")
-    df["X_Value"] = pd.to_numeric(df["X_Value"], errors="coerce")
-    df["SHAP_Value"] = pd.to_numeric(df["SHAP_Value"], errors="coerce")
-    df["Color_Value"] = pd.to_numeric(df["Color_Value"], errors="coerce")
-    df["Color_Vmin_P5"] = pd.to_numeric(df["Color_Vmin_P5"], errors="coerce")
-    df["Color_Vmax_P95"] = pd.to_numeric(df["Color_Vmax_P95"], errors="coerce")
-
-    df = df.dropna(subset=[
-        "Distance_Start_m",
-        "X_Value",
-        "SHAP_Value",
-        "Color_Value",
-    ]).copy()
-
-    base_feature = df["Base_Feature"].iloc[0]
-    color_feature = df["Color_Feature"].iloc[0]
+    base_feature_display = df_panel["Base_Feature_Display"].iloc[0]
+    color_feature_display = df_panel["Color_Feature_Display"].iloc[0]
 
     unique_distances = (
-        df[["Distance_Start_m", "Distance_End_m", "Distance_Label"]]
+        df_panel[["Distance_Start_m", "Distance_End_m", "Distance_Label"]]
         .drop_duplicates()
         .sort_values("Distance_Start_m")
         .reset_index(drop=True)
     )
 
     n_cols = len(unique_distances)
-    n_rows = 2
 
-    fig, axes = plt.subplots(
-        n_rows,
-        n_cols,
-        figsize=(3.5 * n_cols, 12),
-        sharey=True,
-    )
-
-    fig.subplots_adjust(
-        left=0.06,
-        right=0.92,
-        wspace=0.15,
-        hspace=0.35,
-    )
-
-    vmin = float(df["Color_Vmin_P5"].dropna().iloc[0])
-    vmax = float(df["Color_Vmax_P95"].dropna().iloc[0])
+    vmin = float(df_panel["Color_Vmin_P5"].dropna().iloc[0])
+    vmax = float(df_panel["Color_Vmax_P95"].dropna().iloc[0])
 
     cmap = plt.cm.coolwarm
     scatter = None
@@ -168,13 +115,13 @@ def main():
         d_end = int(row_dist["Distance_End_m"])
         label = row_dist["Distance_Label"]
 
-        for row_idx, direction in enumerate(["center", "side"]):
-            ax = axes[row_idx, col_idx] if n_cols > 1 else axes[row_idx]
+        for local_row_idx, direction in enumerate(["center", "side"]):
+            ax = axes_block[local_row_idx][col_idx] if n_cols > 1 else axes_block[local_row_idx]
 
-            plot_data = df[
-                (df["Distance_Start_m"] == d_start)
-                & (df["Distance_End_m"] == d_end)
-                & (df["Direction"] == direction)
+            plot_data = df_panel[
+                (df_panel["Distance_Start_m"] == d_start)
+                & (df_panel["Distance_End_m"] == d_end)
+                & (df_panel["Direction"] == direction)
             ].copy()
 
             if plot_data.empty:
@@ -203,56 +150,148 @@ def main():
                 alpha=0.7,
             )
 
-            ax.set_yscale("symlog", linthresh=3)
+            ax.set_yscale("symlog", linthresh=1)
 
             x_min = plot_data["X_Value"].min()
             x_max = plot_data["X_Value"].max()
 
             if x_max > x_min:
                 ax.set_xticks([x_min, x_min + (x_max - x_min) / 2, x_max])
-                ax.set_xticklabels(["Low", "Med", "High"])
+                ax.set_xticklabels(["Low", "Med", "High"], fontsize=12)
             else:
                 ax.set_xticks([])
 
-            if row_idx == 0:
+            if local_row_idx == 0:
                 ax.set_title(
                     f"Distance: {label}",
-                    fontsize=20,
+                    fontsize=12,
                     fontweight="bold",
-                    pad=15,
+                    pad=12,
                 )
 
             if col_idx == n_cols // 2:
                 ax.set_xlabel(
-                    f"Base Feature: emission_density ({direction.capitalize()})",
-                    fontsize=18,
+                    f"Base Feature: {base_feature_display} ({direction.capitalize()})",
+                    fontsize=12,
                     fontweight="bold",
-                    labelpad=10,
+                    labelpad=4,
                 )
 
             if col_idx == 0:
                 ax.set_ylabel(
-                    "SHAP Value\n(Impact on NOx)",
-                    fontsize=18,
+                    "SHAP Value\n(Impact on NO$_x$)",
+                    fontsize=12,
                 )
 
+            ax.tick_params(axis="both", labelsize=11)
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
 
-    if scatter is not None:
-        cbar_ax = fig.add_axes([0.94, 0.15, 0.01, 0.7])
-        cbar = fig.colorbar(scatter, cax=cbar_ax)
-        cbar.outline.set_visible(False)
-        cbar.set_ticks([vmin, (vmin + vmax) / 2, vmax])
-        cbar.set_ticklabels(["Low", "Med", "High"])
-        cbar.set_label(
-            f"Interacting Feature: {color_feature}",
-            fontsize=18,
-            fontweight="bold",
-            rotation=270,
-            labelpad=25,
+    return scatter, vmin, vmax, color_feature_display
+
+
+def main():
+    if not os.path.exists(SOURCE_DATA_PATH):
+        raise FileNotFoundError(SOURCE_DATA_PATH)
+
+    df = pd.read_csv(SOURCE_DATA_PATH, encoding="utf-8-sig")
+
+    required_cols = [
+        "Panel",
+        "Base_Feature_Display",
+        "Color_Feature_Display",
+        "Direction",
+        "Distance_Start_m",
+        "Distance_End_m",
+        "Distance_Label",
+        "Station",
+        "X_Value",
+        "SHAP_Value",
+        "Color_Value",
+        "Color_Vmin_P5",
+        "Color_Vmax_P95",
+    ]
+
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Missing required column in Fig9_source_data.csv: {col}")
+
+    df["Distance_Start_m"] = pd.to_numeric(df["Distance_Start_m"], errors="coerce")
+    df["Distance_End_m"] = pd.to_numeric(df["Distance_End_m"], errors="coerce")
+    df["X_Value"] = pd.to_numeric(df["X_Value"], errors="coerce")
+    df["SHAP_Value"] = pd.to_numeric(df["SHAP_Value"], errors="coerce")
+    df["Color_Value"] = pd.to_numeric(df["Color_Value"], errors="coerce")
+    df["Color_Vmin_P5"] = pd.to_numeric(df["Color_Vmin_P5"], errors="coerce")
+    df["Color_Vmax_P95"] = pd.to_numeric(df["Color_Vmax_P95"], errors="coerce")
+
+    df = df.dropna(subset=[
+        "Panel",
+        "Distance_Start_m",
+        "X_Value",
+        "SHAP_Value",
+        "Color_Value",
+    ]).copy()
+
+    panels = ["a", "b"]
+
+    fig, axes = plt.subplots(
+        4,
+        7,
+        figsize=(25, 22),
+        sharey=False,
+    )
+
+    fig.subplots_adjust(
+        left=0.06,
+        right=0.91,
+        top=0.96,
+        bottom=0.06,
+        wspace=0.15,
+        hspace=0.42,
+    )
+
+    for i, panel in enumerate(panels):
+        df_panel = df[df["Panel"] == panel].copy()
+
+        row_start = i * 2
+        axes_block = axes[row_start:row_start + 2, :]
+
+        scatter, vmin, vmax, color_feature_display = draw_matrix_block(
+            fig=fig,
+            axes_block=axes_block,
+            df_panel=df_panel,
+            panel_letter=panel,
         )
-        cbar.ax.tick_params(labelsize=18)
+
+        axes[row_start, 0].text(
+            -0.30,
+            1.25,
+            panel,
+            transform=axes[row_start, 0].transAxes,
+            fontsize=28,
+            fontweight="bold",
+            va="top",
+            color="black",
+        )
+
+        if scatter is not None:
+            if i == 0:
+                cbar_ax = fig.add_axes([0.925, 0.56, 0.012, 0.34])
+            else:
+                cbar_ax = fig.add_axes([0.925, 0.12, 0.012, 0.34])
+
+            cbar = fig.colorbar(scatter, cax=cbar_ax)
+            cbar.outline.set_visible(False)
+            cbar.set_ticks([vmin, (vmin + vmax) / 2, vmax])
+            cbar.set_ticklabels(["Low", "Med", "High"])
+            cbar.set_label(
+                f"Interacting Feature: {color_feature_display}",
+                fontsize=12,
+                fontweight="bold",
+                rotation=270,
+                labelpad=18,
+            )
+            cbar.ax.tick_params(labelsize=11)
 
     plt.savefig(OUTPUT_PNG, dpi=300, bbox_inches="tight")
     plt.savefig(OUTPUT_PDF, format="pdf", bbox_inches="tight")

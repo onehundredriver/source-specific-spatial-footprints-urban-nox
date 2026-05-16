@@ -14,8 +14,8 @@ from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
 
-MAIN_FIGS = [f"Fig{i}" for i in range(1, 12)]
-SUPP_FIGS = [f"Supplementary_Fig{i}" for i in range(1, 8)]
+MAIN_FIGS = [f"Fig{i}" for i in range(1, 10)]
+SUPP_FIGS = [f"Supplementary_Fig{i}" for i in range(1, 10)]
 
 REQUIRED_PUBLIC_FILES = [
     "data/public/national_control_station_metadata.csv",
@@ -36,11 +36,6 @@ REQUIRED_SPLIT_FILES = [
 REQUIRED_DOCS = [
     "README.md",
     "REPRODUCIBILITY_GUIDE.md",
-    "docs/DATA_AVAILABILITY_DETAILS.md",
-    "docs/CODE_AVAILABILITY_DETAILS.md",
-    "docs/NATIONAL_CONTROL_NOX_QC_DESCRIPTION.md",
-    "docs/EXPERIMENTAL_REPRODUCIBILITY_BOUNDARY.md",
-    "docs/THIRD_PARTY_DATA_SOURCES.md",
 ]
 
 
@@ -56,17 +51,17 @@ def file_status(rel_path: str) -> dict:
 def collect_expected_files() -> list[dict]:
     rows = []
 
-    # 主图 Fig.1 到 Fig.11
+    # 主图 Fig.1 到 Fig.9
     for fig in MAIN_FIGS:
         rows.append(file_status(f"data/source_data/main/{fig}_source_data.csv"))
         rows.append(file_status(f"code/scripts/reproduce_{fig.lower()}_from_source_data.py"))
         rows.append(file_status(f"figures/main/{fig}_reproduced_from_source_data.png"))
         rows.append(file_status(f"figures/main/{fig}_reproduced_from_source_data.pdf"))
 
-    # Fig.4 当前还有一个交通网络 source data 文件
-    rows.append(file_status("data/source_data/main/Fig4_traffic_network.csv"))
+    # Fig.3 当前还有一个交通网络 source data 文件
+    rows.append(file_status("data/source_data/main/Fig3_traffic_network.csv"))
 
-    # 补充图 Supplementary Fig.1 到 Supplementary Fig.7
+    # 补充图 Supplementary Fig.1 到 Supplementary Fig.9
     for fig in SUPP_FIGS:
         csv_path = f"data/source_data/supplementary/{fig}_source_data.csv"
         xlsx_path = f"data/source_data/supplementary/{fig}_source_data.xlsx"
