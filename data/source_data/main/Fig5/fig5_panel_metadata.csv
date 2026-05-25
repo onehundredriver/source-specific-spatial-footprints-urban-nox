@@ -1,0 +1,4 @@
+﻿Panel,Base_Feature,Base_Feature_Display,Color_Feature,Color_Feature_Display,Row_Title,Color_Is_Spatial,Color_Vmin_P5,Color_Vmax_P95,Distances_Shown,Directions_Shown
+c,emission_other_density,Road-emission density,WS10M,10 m wind speed,Road-emission density × 10 m wind speed,False,1.67,9.52,0-50m; 200-500m; 2000-3000m; 0-50m; 200-500m; 2000-3000m,center; side
+d,emission_other_density,Road-emission density,density_forest,Forest density,Road-emission density × forest density,True,0.0,1.0,0-50m; 200-500m; 2000-3000m; 0-50m; 200-500m; 2000-3000m,center; side
+e,emission_other_density,Road-emission density,avg_frontal_area,Average frontal area,Road-emission density × average frontal area,True,0.0,2407.1703233532517,0-50m; 200-500m; 2000-3000m; 0-50m; 200-500m; 2000-3000m,center; side

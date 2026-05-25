@@ -1,0 +1,8 @@
+﻿panel,item,value,notes
+b,fixed_radius_example,500 m,Illustrative fixed-radius buffer; schematic only.
+b,source_specific_footprints,"vehicle, shipping, industrial",Schematic contrast among source footprints.
+c,upwind_domain,180 degrees,Semicircle centred on incoming wind direction.
+c,initial_grid,3 sectors × 7 distance bands,Initial wind-sensitive sector-grid.
+c,final_grid,2 sectors × 7 distance bands,Two lateral sectors are merged into one side-sector class.
+c,distance_bands,0–50; 50–100; 100–200; 200–500; 500–1000; 1000–2000; 2000–3000 m,Operational distance bands.
+d,workflow,spatial representation → generalisation tests → SHAP attribution → urban diagnosis,Analytical workflow schematic.

@@ -1,0 +1,5 @@
+﻿node_id,label,annotation
+1,"Monitoring, meteorology and urban predictors",58 monitoring sites
+2,"Wind-sensitive, source-aware spatial aggregation",2 sectors × 7 bands
+3,Spatial/temporal generalisation + SHAP attribution,model generalisation and attribution
+4,Scale-aware urban diagnosis,"monitoring, exposure and planning"

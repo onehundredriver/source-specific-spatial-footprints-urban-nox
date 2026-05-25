@@ -1,4 +1,4 @@
-# Source-specific Spatial Footprints of Urban NOX in Shanghai
+﻿# Source-specific Spatial Footprints of Urban NOX in Shanghai
 
 ## Summary
 
@@ -64,7 +64,7 @@ docs/
 
 This repository includes:
 
-1. source data for released main and supplementary figures;
+1. source data for released main, Extended Data and supplementary figures;
 2. scripts for reproducing figures from source data;
 3. processed public national-control NOX observations and station metadata;
 4. NOX quality-control summaries;

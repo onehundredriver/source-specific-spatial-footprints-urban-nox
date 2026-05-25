@@ -1,0 +1,22 @@
+﻿Source,Target,Value
+Meteorological Parameters,Temporal Parameters,20.62499173128083
+Landuse Parameters,Meteorological Parameters,12.150544834332472
+Meteorological Parameters,Urban Canopy Parameters,12.094073782918656
+Emission Source Parameters,Meteorological Parameters,8.26615929979161
+Landuse Parameters,Urban Canopy Parameters,7.37529017473571
+Emission Source Parameters,Landuse Parameters,5.2849547047675856
+Emission Source Parameters,Urban Canopy Parameters,4.98371521466688
+Temporal Parameters,Urban Canopy Parameters,4.482254405553249
+Landuse Parameters,Temporal Parameters,4.423733697706666
+Meteorological Parameters,Road Topology Parameters,3.4557830226296886
+Emission Source Parameters,Temporal Parameters,3.1349168293093044
+Landuse Parameters,Road Topology Parameters,2.261035685900424
+Road Topology Parameters,Urban Canopy Parameters,2.1297611790214432
+Meteorological Parameters,POI Parameters,1.882428352128386
+Emission Source Parameters,Road Topology Parameters,1.644886630190619
+Road Topology Parameters,Temporal Parameters,1.305553911759489
+Landuse Parameters,POI Parameters,0.9959577827248722
+POI Parameters,Urban Canopy Parameters,0.9341481714509428
+POI Parameters,Temporal Parameters,0.6792720852972707
+Emission Source Parameters,POI Parameters,0.5798757190724046
+POI Parameters,Road Topology Parameters,0.2545307566470001
